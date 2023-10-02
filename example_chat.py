@@ -131,6 +131,6 @@ for i in range(10):
 
     # Send API request with history
     history = run(input_text, history)
-    #print(history)
+    print(history)
 
     print(history["visible"][-1][1])

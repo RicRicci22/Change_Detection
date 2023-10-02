@@ -11,6 +11,7 @@ import json
 from tqdm import tqdm
 from utils.images_utils import extract_blobs, get_largest_poly, crop_image
 import numpy as np
+import torch
 
 def main(llms_params:dict, dataset_params:dict):
     '''
@@ -24,8 +25,6 @@ def main(llms_params:dict, dataset_params:dict):
     # Sanity checks on llm params
     assert llms_params["answerer"] in ["blip2"], "Answerer not supported"
     assert llms_params["questioner"] in ["vicuna"], "Questioner not supported"
-    assert os.path.exists(dataset_params["dataset_path_im1"]), "Path of dataset images not found"
-    assert os.path.exists(dataset_params["dataset_path_im2"]), "Path of dataset images not found"
     
     # Sanity checks on dataset params
     assert os.path.exists(dataset_params["dataset_path"]), "Path of dataset not found"
@@ -40,87 +39,94 @@ def main(llms_params:dict, dataset_params:dict):
         # in this case it should perform prediction and then crop
         pass 
     
-    
-    # Create the dataset that spits images names
-    dataset = ChatSet(dataset_params["dataset_path"])
-    
-    images_names = os.listdir(os.path.join(dataset_params["dataset_path"],"im1")) # Names of the images 
-    
-    results = dict()
+    ########## Initialize the chat ##########
     chat = Chatter(
         answerer=llms_params["answerer_type"],
         model=llms_params["answerer_model"],
         a_device=llms_params["answerer_device"],
     )
     dialogue_steps = llms_params["dialogue_steps"]
+    #########################################
     
-    for img_name in tqdm(images_names):
-        # Open the images
-        img_1_pil = Image.open(os.path.join(dataset_params["dataset_path"],"im1",img_name))
-        img_2_pil =Image.open(os.path.join(dataset_params["dataset_path"],"im2",img_name))
+    # Create the dataset that spits images names
+    dataset = ChatSet(dataset_params["dataset_path"], dataset_params["chats_path"])
+    
+    results = dict()
+    
+    for _ in range(dialogue_steps):
+        # Create the dataloader for the questioner 
+        dataloader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=False)
+        for batch in enumerate(tqdm(dataloader)):
+            print(batch)
+    
+#     for img_name in tqdm(images_names):
+#         # Open the images
+#         img_1_pil = Image.open(os.path.join(dataset_params["dataset_path"],"im1",img_name))
+#         img_2_pil =Image.open(os.path.join(dataset_params["dataset_path"],"im2",img_name))
         
-        if dataset_params["crop"]:
-            if dataset_params["use_labels"]:
-                mask_1 = Image.open(Image.open(os.path.join(dataset_params["dataset_path"],"label1",img_name)))
-                mask_2 = Image.open(Image.open(os.path.join(dataset_params["dataset_path"],"label2",img_name)))
-            else:
-                # Implement the creation of masks for both images 
-                raise NotImplementedError("This part is not implemented yet")
+#         if dataset_params["crop"]:
+#             if dataset_params["use_labels"]:
+#                 mask_1 = Image.open(Image.open(os.path.join(dataset_params["dataset_path"],"label1",img_name)))
+#                 mask_2 = Image.open(Image.open(os.path.join(dataset_params["dataset_path"],"label2",img_name)))
+#             else:
+#                 # Implement the creation of masks for both images 
+#                 raise NotImplementedError("This part is not implemented yet")
             
-            # Extracts the blobs from the binary masks
-            mask_array_1 = np.array(mask_1)
-            polygons_1 = extract_blobs(mask_array_1)
-            mask_array_2 = np.array(mask_2)
-            polygons_2 = extract_blobs(mask_array_2)
+#             # Extracts the blobs from the binary masks
+#             mask_array_1 = np.array(mask_1)
+#             polygons_1 = extract_blobs(mask_array_1)
+#             mask_array_2 = np.array(mask_2)
+#             polygons_2 = extract_blobs(mask_array_2)
 
-            all_poly = polygons_1 + polygons_2
-            # Get the largest polygon (largest changed area)
-            largest_polygon = get_largest_poly(all_poly)
+#             all_poly = polygons_1 + polygons_2
+#             # Get the largest polygon (largest changed area)
+#             largest_polygon = get_largest_poly(all_poly)
 
-            if largest_polygon and largest_polygon.area>area_threshold:
-                # Crop the image and substitute the original image with the cropped one
-                img_1_pil = crop_image(img_1_pil, largest_polygon)
-                img_2_pil = crop_image(img_2_pil, largest_polygon)
+#             if largest_polygon and largest_polygon.area>area_threshold:
+#                 # Crop the image and substitute the original image with the cropped one
+#                 img_1_pil = crop_image(img_1_pil, largest_polygon)
+#                 img_2_pil = crop_image(img_2_pil, largest_polygon)
 
-        for _ in range(dialogue_steps):
-            # Pseudocode
-            # Provide the first template question for all the images
-            # question is a dictioanry with the name of the image and a list of questions and answers
-            # Answer the question in batch with the answerer 
-            #  
-            # 
-            question = chat.ask_question_API(batch=False)
-            question = chat.question_trim(question)
-            chat.conversation.append_question(question)
-            answer = chat.answer_question(crop_1)
-            chat.conversation.append_answer(answer)
+#         for _ in range(dialogue_steps):
+#             # Pseudocode
+#             # Provide the first template question for all the images
+#             # question is a dictioanry with the name of the image and a list of questions and answers
+#             # Answer the question in batch with the answerer 
+#             #  
+#             # 
+#             question = chat.ask_question_API()
+#             question = chat.question_trim(question)
+#             chat.conversation.append_question(question)
+#             # Answer in batch
+#             answer = chat.answer_question(crop_1)
+#             chat.conversation.append_answer(answer)
 
-            # Save in the dict
-            questions, answers = chat.conversation.return_messages()
-            results[img_name] = [{"questions": questions, "answers": answers}]
+#             # Save in the dict
+#             questions, answers = chat.conversation.return_messages()
+#             results[img_name] = [{"questions": questions, "answers": answers}]
 
-            chat.reset_history()
+#             chat.reset_history()
 
-            for i in range(dialogue_steps):
-                question = chat.ask_question_API()
-                question = chat.question_trim(question)
-                chat.conversation.append_question(question)
-                answer = chat.answer_question(crop_2)
-                chat.conversation.append_answer(answer)
+#             for i in range(dialogue_steps):
+#                 question = chat.ask_question_API()
+#                 question = chat.question_trim(question)
+#                 chat.conversation.append_question(question)
+#                 answer = chat.answer_question(crop_2)
+#                 chat.conversation.append_answer(answer)
 
-            questions, answers = chat.conversation.return_messages()
+#             questions, answers = chat.conversation.return_messages()
 
-            results[img_name].append({"questions": questions, "answers": answers})
+#             results[img_name].append({"questions": questions, "answers": answers})
 
-            chat.reset_history()
-        else:
-            print("Polygon too small!")
-    else:
-        print("No polygon found for image: {}, or polygon too small".format(img_name))
+#             chat.reset_history()
+#         else:
+#             print("Polygon too small!")
+#     else:
+#         print("No polygon found for image: {}, or polygon too small".format(img_name))
 
-# Save the dict
-with open("results/img_dialogues_crop.json", "w") as file:
-    json.dump(results, file, indent=4)
+# # Save the dict
+# with open("results/img_dialogues_crop.json", "w") as file:
+#     json.dump(results, file, indent=4)
     
 
     
@@ -138,6 +144,7 @@ if __name__ == "__main__":
     
     dataset_params = {
         "dataset_path": "/media/melgani/Melgani/Riccardo/Datasets/segmentation/Semantic segmentation/second_dataset/public/test",
+        "chats_path": "chats_cache/",
         "crop": False,
         "area_threshold" : 5,
         "use_labels": True, # If true, it can use the labels to crop the image in the area of the biggest change

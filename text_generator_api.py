@@ -5,7 +5,6 @@
 # -------------------------------------------------------------------------
 
 import requests
-import json
 
 # For local streaming, the websockets are hosted without ssl - http://
 HOST = "localhost:5000"

@@ -12,6 +12,13 @@ class ChatSet(Dataset):
         # images_path : str -> path of the folder containing all the images
         # chats_path : str -> path of the folder containing all the chats
         self.images_path = images_path
+        # Get the path of the images pre change
+        self.im_pre_path = os.path.join(images_path, "im1")
+        # Get the path of the images post change
+        self.im_post_path = os.path.join(images_path, "im2")
+        # Get the path of the masks
+        # TODO
+        # Get the path of the chats
         self.chats_path = chats_path
         self.images_names = os.listdir(images_path)
     
@@ -19,12 +26,14 @@ class ChatSet(Dataset):
         return len(self.images_names)
 
     def __getitem__(self, index) -> Any:
-        image_path = os.path.join(self.images_path, self.images_names[index])
+        im_pre_path = os.path.join(self.im_pre_path, self.images_names[index])
+        im_post_path = os.path.join(self.im_post_path, self.images_names[index])
         chat_path = os.path.join(self.chats_path, self.images_names[index].split(".")[0]+".txt")
         # Open the image 
-        image = Image.open(image_path)
+        im_pre = Image.open(im_pre_path)
+        im_post = Image.open(im_post_path)
         # Open the chat
         with open(chat_path, "r") as file:
             chat = file.read()
-        return image, chat
+        return self.images_names[index], im_pre, im_post, chat
     

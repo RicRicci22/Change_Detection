@@ -197,7 +197,6 @@ if __name__ == "__main__":
             "Carefully asking me informative questions to maximize your information about this image content. "
             "Each time ask one question only without giving an answer. "
             "Avoid asking yes/no questions."
-            'I\'ll put my answer beginning with "Answer:".'
         ),
         a_system="Answer given questions. If you are not sure about the answer, say you don't know honestly. Don't imagine any contents that are not in the image.",
         s_system=SUMMARY_INSTRUCTION,

@@ -146,23 +146,20 @@ class Chatter:
         return change_summary
 
 
-    def ask_question_API(self, batch=False) -> str:
+    def ask_question_API(self) -> str:
         """
         This function asks a question about the image using the questioner model and the previous chat context
         """
-        if batch:
-            pass
+        if len(self.conversation.messages) == 0:
+            # first question is given by human to request a general discription
+            question = FIRST_QUESTION
         else:
-            if len(self.conversation.messages) == 0:
-                # first question is given by human to request a general discription
-                question = FIRST_QUESTION
-            else:
-                print("Asking question..")
-                history, prompt = self.conversation.get_vicuna_question_prompt_API()
-                prompt = self.conversation.manipulate_prompt_API(prompt)
-                question = prompt_response_chat(prompt, history)["visible"][-1][1]
+            print("Asking question..")
+            history, prompt = self.conversation.get_vicuna_question_prompt_API()
+            prompt = self.conversation.manipulate_prompt_API(prompt)
+            question = prompt_response_chat(prompt, history)["visible"][-1][1]
 
-            return question
+        return question
 
     def question_trim(self, question):
         question = question.replace("\n", " ").strip()
