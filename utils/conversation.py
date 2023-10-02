@@ -158,10 +158,9 @@ class Conversation:
         self.messages.append([role, message])
 
     def append_question(self, question: str):
-        message = question
         if len(self.messages) == 0 or self.messages[-1][0] == self.roles[0]:
             # Append if the list is empty or the last message is from the user (so an answer)
-            self.append_message(role=self.roles[1], message=message)
+            self.append_message(role=self.roles[1], message=question)
         else:
             raise ValueError("The last message must be an answer from the user!")
 

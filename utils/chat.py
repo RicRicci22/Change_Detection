@@ -6,7 +6,6 @@ from text_generator_api import prompt_response_chat
 
 FIRST_QUESTION = "Describe this remote sensed image in detail."
 
-
 QUESTIONER_MODELS = ["chatgpt", "vicuna"]
 ANSWERER_MODELS = ["blip2"]
 SUMMARIZERS = ["chatgpt", "vicuna"]
@@ -56,8 +55,8 @@ class Chatter:
     """
     This class serves as the chatbot to ask questions about an image using questioner model and answer them with answerer model
     """
-
-    def __init__(  # TODO ADD summarizer
+    
+    def __init__(
         self,
         questioner=None,
         answerer=None,
@@ -146,35 +145,24 @@ class Chatter:
         )
         return change_summary
 
-    def ask_question(self) -> str:
+
+    def ask_question_API(self, batch=False) -> str:
         """
         This function asks a question about the image using the questioner model and the previous chat context
         """
-        if len(self.conversation.messages) == 0:
-            # first question is given by human to request a general discription
-            question = FIRST_QUESTION
+        if batch:
+            pass
         else:
-            print("Asking question..")
-            questioner_prompt = self.conversation.get_vicuna_question_prompt()
-            print(questioner_prompt)
-            question = self.call_questioner(questioner_prompt)
+            if len(self.conversation.messages) == 0:
+                # first question is given by human to request a general discription
+                question = FIRST_QUESTION
+            else:
+                print("Asking question..")
+                history, prompt = self.conversation.get_vicuna_question_prompt_API()
+                prompt = self.conversation.manipulate_prompt_API(prompt)
+                question = prompt_response_chat(prompt, history)["visible"][-1][1]
 
-        return question
-
-    def ask_question_API(self) -> str:
-        """
-        This function asks a question about the image using the questioner model and the previous chat context
-        """
-        if len(self.conversation.messages) == 0:
-            # first question is given by human to request a general discription
-            question = FIRST_QUESTION
-        else:
-            print("Asking question..")
-            history, prompt = self.conversation.get_vicuna_question_prompt_API()
-            prompt = self.conversation.manipulate_prompt_API(prompt)
-            question = prompt_response_chat(prompt, history)["visible"][-1][1]
-
-        return question
+            return question
 
     def question_trim(self, question):
         question = question.replace("\n", " ").strip()
@@ -193,12 +181,15 @@ class Chatter:
         This function answers the question using the answerer model and the previous chat context
         """
         print("Answering question..")
-        prompt = self.conversation.get_blip2_prompt()
+        prompt = self.conversation.get_blip2_prompt(blip_context=self.a_context)
         answer = self.answerer.ask(image, prompt)
 
         return answer
 
     def answer_trim(self, answer):
+        '''
+        It helps in cases in which the answerer model generates a follow-up question after answering given question
+        '''
         answer = answer.split("Question:")[0].replace("\n", " ").strip()
         return answer
 

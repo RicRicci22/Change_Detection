@@ -7,7 +7,6 @@ import numpy as np
 import shapely
 import matplotlib.pyplot as plt
 import rasterio
-import cv2
 
 
 def extract_blobs(mask_array):

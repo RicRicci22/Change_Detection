@@ -1,6 +1,6 @@
 import requests
 
-HOST = "localhost:5010"
+HOST = "localhost:5000"
 URI = f"http://{HOST}/api/v1/chat"
 
 # Important thing for the AIs way to process and/or remember the conversation!
@@ -50,10 +50,10 @@ def run(user_input, history):
     request = {
         "user_input": user_input,
         "history": history,
-        "mode": "instruct",  # Options: 'chat', 'chat-instruct', 'instruct'
+        "mode": "chat",  # Options: 'chat', 'chat-instruct', 'instruct'
         "character": "Example",
         "instruction_template": "Vicuna-v1.1",
-        "your_name": "Human",
+        "your_name": "USER",
         "regenerate": False,
         "_continue": False,  # Option for sending History
         "stop_at_newline": False,
@@ -63,7 +63,7 @@ def run(user_input, history):
         "max_new_tokens": 250,
         "do_sample": True,
         "temperature": 0.7,
-        "top_p": 0.1,
+        "top_p": 0.8,
         "typical_p": 1,
         "epsilon_cutoff": 0,
         "eta_cutoff": 0,
@@ -87,7 +87,7 @@ def run(user_input, history):
         "skip_special_tokens": True,
         "stopping_strings": [
             "\n### Assistant:",
-            "\n### Human:",
+            "\n### Human:"
         ],  # I added these because it seems like all AI love Assistant and Human
     }
 
@@ -131,5 +131,6 @@ for i in range(10):
 
     # Send API request with history
     history = run(input_text, history)
+    #print(history)
 
     print(history["visible"][-1][1])
