@@ -58,23 +58,27 @@ class Chatter:
     
     def __init__(
         self,
-        questioner=None,
-        answerer=None,
-        summarizer=None,
-        q_device=None,
-        a_device=None,
-        s_device=None,
-        q_maxtok=30,
-        a_maxtok=30,
-        s_maxtok=100,
-        q_context=2048,
-        a_context=1,
-        s_context=2048,
+        params = None
+        # questioner=None,
+        # answerer=None,
+        # summarizer=None,
+        # q_device=None,
+        # a_device=None,
+        # s_device=None,
+        # q_maxtok=30,
+        # a_maxtok=30,
+        # s_maxtok=100,
+        # q_context=2048,
+        # a_context=1,
+        # s_context=2048,
     ):
-        if questioner is not None:
+        if params is None:
+            raise ValueError("No parameters given")
+        
+        if params["questioner_type"] is not None:
             # Load the questioner
-            print("Loading questioner..")
-            self.questioner, self.q_tokenizer = load_questioner(questioner, q_device)
+            print("Loading questioner {}", params["questioner_type"])
+            self.questioner, self.q_tokenizer = load_questioner(params["questioner_type"], params["questioner_device"])
         if answerer is not None:
             print("Loading answerer..")
             self.answerer = load_answerer(answerer, a_device)

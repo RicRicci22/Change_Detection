@@ -23,8 +23,8 @@ def main(llms_params:dict, dataset_params:dict):
         The parameters for the dataset, and in general the handling of the images.
     '''
     # Sanity checks on llm params
-    assert llms_params["answerer"] in ["blip2"], "Answerer not supported"
-    assert llms_params["questioner"] in ["vicuna"], "Questioner not supported"
+    assert llms_params["answerer_type"] in ["blip2"], "Answerer not supported"
+    assert llms_params["questioner_type"] in ["vicuna"], "Questioner not supported"
     
     # Sanity checks on dataset params
     assert os.path.exists(dataset_params["dataset_path"]), "Path of dataset not found"
@@ -40,11 +40,7 @@ def main(llms_params:dict, dataset_params:dict):
         pass 
     
     ########## Initialize the chat ##########
-    chat = Chatter(
-        answerer=llms_params["answerer_type"],
-        model=llms_params["answerer_model"],
-        a_device=llms_params["answerer_device"],
-    )
+    chat = Chatter(params=llms_params)
     dialogue_steps = llms_params["dialogue_steps"]
     #########################################
     
@@ -143,94 +139,96 @@ if __name__ == "__main__":
     }
     
     dataset_params = {
-        "dataset_path": "/media/melgani/Melgani/Riccardo/Datasets/segmentation/Semantic segmentation/second_dataset/public/test",
+        "dataset_path": "/media/riccardoricci/Melgani/Riccardo/Datasets/segmentation/Semantic segmentation/second_dataset/public/test",
         "chats_path": "chats_cache/",
         "crop": False,
         "area_threshold" : 5,
         "use_labels": True, # If true, it can use the labels to crop the image in the area of the biggest change
     }
     
-    # Path of dataset images. here two because they are pre/post change images.
-    dataset_path_im1 = "/media/melgani/Melgani/Riccardo/Datasets/segmentation/Semantic segmentation/second_dataset/public/test/im1"
-    dataset_path_im2 = "/media/melgani/Melgani/Riccardo/Datasets/segmentation/Semantic segmentation/second_dataset/public/test/im2"
-    crop = False
-    # Path of dataset labels. Not needed if crop is set to false
-    dataset_path_labels_1 = "/media/melgani/Melgani/Riccardo/Datasets/segmentation/Semantic segmentation/second_dataset/public/test/label1"
-    dataset_path_labels_2 = "/media/melgani/Melgani/Riccardo/Datasets/segmentation/Semantic segmentation/second_dataset/public/test/label2"
-
-    with open("CDVQA_dataset/Test_CD_VQA_summary_Final.json", "r") as file:
-        test_merged = json.load(file)
+    main(llms_params, dataset_params)
     
-    area_threshold = 5
+    # # Path of dataset images. here two because they are pre/post change images.
+    # dataset_path_im1 = "/media/melgani/Melgani/Riccardo/Datasets/segmentation/Semantic segmentation/second_dataset/public/test/im1"
+    # dataset_path_im2 = "/media/melgani/Melgani/Riccardo/Datasets/segmentation/Semantic segmentation/second_dataset/public/test/im2"
+    # crop = False
+    # # Path of dataset labels. Not needed if crop is set to false
+    # dataset_path_labels_1 = "/media/melgani/Melgani/Riccardo/Datasets/segmentation/Semantic segmentation/second_dataset/public/test/label1"
+    # dataset_path_labels_2 = "/media/melgani/Melgani/Riccardo/Datasets/segmentation/Semantic segmentation/second_dataset/public/test/label2"
 
-    results = dict()
+    # with open("CDVQA_dataset/Test_CD_VQA_summary_Final.json", "r") as file:
+    #     test_merged = json.load(file)
     
-    device_answerer = "cuda:1"
-    chat = Chatter(
-        answerer="blip2",
-        a_device=device_answerer,
-    )
-    dialogue_steps = 10
+    # area_threshold = 5
 
-    for element in tqdm(test_merged["CDVQA"]):
-        img_name = element["image"]
-        path_image_1 = os.path.join(dataset_path_im1, img_name)
-        path_image_2 = os.path.join(dataset_path_im2, img_name)
+    # results = dict()
+    
+    # device_answerer = "cuda:1"
+    # chat = Chatter(
+    #     answerer="blip2",
+    #     a_device=device_answerer,
+    # )
+    # dialogue_steps = 10
 
-        path_label_1 = os.path.join(dataset_path_labels_1, img_name)
-        path_label_2 = os.path.join(dataset_path_labels_2, img_name)
+    # for element in tqdm(test_merged["CDVQA"]):
+    #     img_name = element["image"]
+    #     path_image_1 = os.path.join(dataset_path_im1, img_name)
+    #     path_image_2 = os.path.join(dataset_path_im2, img_name)
 
-        mask_1 = Image.open(path_label_1)
-        mask_2 = Image.open(path_label_2)
+    #     path_label_1 = os.path.join(dataset_path_labels_1, img_name)
+    #     path_label_2 = os.path.join(dataset_path_labels_2, img_name)
 
-        img_1_pil = Image.open(path_image_1)
-        img_2_pil = Image.open(path_image_2)
+    #     mask_1 = Image.open(path_label_1)
+    #     mask_2 = Image.open(path_label_2)
 
-        mask_array_1 = np.array(mask_1)
-        polygons_1 = extract_blobs(mask_array_1)
+    #     img_1_pil = Image.open(path_image_1)
+    #     img_2_pil = Image.open(path_image_2)
 
-        mask_array_2 = np.array(mask_2)
-        polygons_2 = extract_blobs(mask_array_2)
+    #     mask_array_1 = np.array(mask_1)
+    #     polygons_1 = extract_blobs(mask_array_1)
 
-        all_poly = polygons_1 + polygons_2
-        # Get the largest polygon (largest changed area)
-        largest_polygon = get_largest_poly(all_poly)
+    #     mask_array_2 = np.array(mask_2)
+    #     polygons_2 = extract_blobs(mask_array_2)
 
-        if largest_polygon and largest_polygon.area>area_threshold:
-            crop_1 = crop_image(img_1_pil, largest_polygon)
-            crop_2 = crop_image(img_2_pil, largest_polygon)
+    #     all_poly = polygons_1 + polygons_2
+    #     # Get the largest polygon (largest changed area)
+    #     largest_polygon = get_largest_poly(all_poly)
 
-            if crop_1.size[0]>1 and crop_1.size[0]>1:
-                for i in range(dialogue_steps):
-                    question = chat.ask_question_API()
-                    question = chat.question_trim(question)
-                    chat.conversation.append_question(question)
-                    answer = chat.answer_question(crop_1)
-                    chat.conversation.append_answer(answer)
+    #     if largest_polygon and largest_polygon.area>area_threshold:
+    #         crop_1 = crop_image(img_1_pil, largest_polygon)
+    #         crop_2 = crop_image(img_2_pil, largest_polygon)
 
-                # Save in the dict
-                questions, answers = chat.conversation.return_messages()
-                results[img_name] = [{"questions": questions, "answers": answers}]
+    #         if crop_1.size[0]>1 and crop_1.size[0]>1:
+    #             for i in range(dialogue_steps):
+    #                 question = chat.ask_question_API()
+    #                 question = chat.question_trim(question)
+    #                 chat.conversation.append_question(question)
+    #                 answer = chat.answer_question(crop_1)
+    #                 chat.conversation.append_answer(answer)
 
-                chat.reset_history()
+    #             # Save in the dict
+    #             questions, answers = chat.conversation.return_messages()
+    #             results[img_name] = [{"questions": questions, "answers": answers}]
 
-                for i in range(dialogue_steps):
-                    question = chat.ask_question_API()
-                    question = chat.question_trim(question)
-                    chat.conversation.append_question(question)
-                    answer = chat.answer_question(crop_2)
-                    chat.conversation.append_answer(answer)
+    #             chat.reset_history()
 
-                questions, answers = chat.conversation.return_messages()
+    #             for i in range(dialogue_steps):
+    #                 question = chat.ask_question_API()
+    #                 question = chat.question_trim(question)
+    #                 chat.conversation.append_question(question)
+    #                 answer = chat.answer_question(crop_2)
+    #                 chat.conversation.append_answer(answer)
 
-                results[img_name].append({"questions": questions, "answers": answers})
+    #             questions, answers = chat.conversation.return_messages()
 
-                chat.reset_history()
-            else:
-                print("Polygon too small!")
-        else:
-            print("No polygon found for image: {}, or polygon too small".format(img_name))
+    #             results[img_name].append({"questions": questions, "answers": answers})
 
-    # Save the dict
-    with open("results/img_dialogues_crop.json", "w") as file:
-        json.dump(results, file, indent=4)
+    #             chat.reset_history()
+    #         else:
+    #             print("Polygon too small!")
+    #     else:
+    #         print("No polygon found for image: {}, or polygon too small".format(img_name))
+
+    # # Save the dict
+    # with open("results/img_dialogues_crop.json", "w") as file:
+    #     json.dump(results, file, indent=4)
