@@ -22,17 +22,18 @@ if result == "Result 1":
     if st.button("Get random image!"):
         # Get random img
         img_name = random.choice(all_imgs)
+        st.write(img_name)
         # Show the image, and the three results
         col1, col2, col3 = st.columns(3)
         # Load the image
-        path1 = "D:/Riccardo/Datasets/segmentation/Semantic segmentation/second_dataset/public/test/im1"
-        path2 = "D:/Riccardo/Datasets/segmentation/Semantic segmentation/second_dataset/public/test/im2"
+        path1 = "/media/riccardoricci/Melgani/Riccardo/Datasets/segmentation/Semantic segmentation/second_dataset/public/test/im1"
+        path2 = "/media/riccardoricci/Melgani/Riccardo/Datasets/segmentation/Semantic segmentation/second_dataset/public/test/im2"
         img1 = Image.open(f"{path1}/{img_name}")
         img2 = Image.open(f"{path2}/{img_name}")
         col1.image(img1, caption="Image 1")
         col3.image(img2, caption="Image 2")
         # Plot results
-        st.write(change_descriptions[img_name])
+        st.write(summaries[img_name])
 
 
 elif result == "Result 2":
@@ -50,8 +51,8 @@ elif result == "Result 2":
         # Show the image, and the three results
         col1, col2, col3 = st.columns(3)
         # Load the image
-        path1 = "D:/Riccardo/Datasets/segmentation/Semantic segmentation/second_dataset/public/test/im1"
-        path2 = "D:/Riccardo/Datasets/segmentation/Semantic segmentation/second_dataset/public/test/im2"
+        path1 = "/media/riccardoricci/Melgani/Riccardo/Datasets/segmentation/Semantic segmentation/second_dataset/public/test/im1"
+        path2 = "/media/riccardoricci/Melgani/Riccardo/Datasets/segmentation/Semantic segmentation/second_dataset/public/test/im2"
         img1 = Image.open(f"{path1}/{img_name}")
         img2 = Image.open(f"{path2}/{img_name}")
         col1.image(img1, caption="Image 1")
@@ -77,8 +78,8 @@ elif result == "Result 3":
         # Show the image, and the three results
         col1, col2, col3 = st.columns(3)
         # Load the image
-        path1 = "D:/Riccardo/Datasets/segmentation/Semantic segmentation/second_dataset/public/test/im1"
-        path2 = "D:/Riccardo/Datasets/segmentation/Semantic segmentation/second_dataset/public/test/im2"
+        path1 = "/media/riccardoricci/Melgani/Riccardo/Datasets/segmentation/Semantic segmentation/second_dataset/public/test/im1"
+        path2 = "/media/riccardoricci/Melgani/Riccardo/Datasets/segmentation/Semantic segmentation/second_dataset/public/test/im2"
         img1 = Image.open(f"{path1}/{img_name}")
         img2 = Image.open(f"{path2}/{img_name}")
         col1.image(img1, caption="Image 1")
