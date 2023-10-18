@@ -1,8 +1,6 @@
 from utils.blip2 import Blip2
-from utils.vicuna import load_model
-from utils.vicuna import generate_stream
-from utils.conversation import Conversation
-from text_generator_api import prompt_response_chat
+from utils.vicuna import load_hug_model
+import torch
 
 FIRST_QUESTION = "Describe this remote sensed image in detail."
 
@@ -11,201 +9,120 @@ ANSWERER_MODELS = ["blip2"]
 SUMMARIZERS = ["chatgpt", "vicuna"]
 
 
-def load_vicuna(device: str):
-    model_name = "TheBloke_vicuna-13B-1.1-GPTQ-4bit-128g"
-    model_path = (
-        "D:/Riccardo/Second year/open_source_llms/FastChat/models/" + model_name
-    )
-    tokenizer, model, context_len = load_model(model_path, device)
-
-    return model, tokenizer, context_len
-
-
-def load_blip2(device: str):
-    blip2 = Blip2("FlanT5 XXL", device=device, bit8=True)
-
-    return blip2
-
-
-def load_questioner(model_name: str, device: str):
-    assert device is not None
-    if model_name in QUESTIONER_MODELS:
-        if model_name == "chatgpt":
-            raise NotImplementedError("chatgpt is not implemented yet")
-        elif model_name == "vicuna":
-            model, tokenizer, context_len = load_vicuna(device)
-        else:
-            raise ValueError("{} is not a valid question model".format(model_name))
+def load_vicuna(model_name, device: str="cpu"):
+    '''
+    Load vicuna calling the load_hug_model function, which is a general function to load models from huggingface
+    '''
+    tokenizer, model = load_hug_model(model_name, device)
 
     return model, tokenizer
 
 
-def load_answerer(model_name: str, device: str):
-    assert device is not None
-    if model_name in ANSWERER_MODELS:
-        if model_name == "blip2":
-            model = load_blip2(device)
-        else:
-            raise ValueError("{} is not a valid question model".format(model_name))
+def load_blip2(model_name, device: str="cpu"):
+    '''
+    Load blip by custom Blip 2 class, TODO transform using the general function load_hug_model
+    '''
+    model = Blip2(model_name, device=device, bit4=True)
 
     return model
 
+def load_questioner(model_type: str, model_name:str, device: str="cpu"):
+    '''
+    Load the questioner model, by first checking if it is a valid model
+    '''
+    if model_type in QUESTIONER_MODELS:
+        if model_type == "chatgpt":
+            raise NotImplementedError("chatgpt is not implemented yet")
+        elif model_type == "vicuna":
+            model, tokenizer = load_vicuna(model_name, device)
+    else:
+        raise ValueError("{} is not a valid question model".format(model_name))
+
+    return model, tokenizer
+
+
+def load_answerer(model_type: str, model_name:str, device: str="cpu"):
+    '''
+    Load the answerer model, by first checking if it is a valid model
+    '''
+    if model_type in ANSWERER_MODELS:
+        if model_type == "blip2":
+            model = load_blip2(model_name, device)
+    else:
+        raise ValueError("{} is not a valid question model".format(model_name))
+
+    return model
 
 class Chatter:
     """
-    This class serves as the chatbot to ask questions about an image using questioner model and answer them with answerer model
+    This class serves to include functions to call the various models
     """
     
     def __init__(
-        self,
-        params = None
-        # questioner=None,
-        # answerer=None,
-        # summarizer=None,
-        # q_device=None,
-        # a_device=None,
-        # s_device=None,
-        # q_maxtok=30,
-        # a_maxtok=30,
-        # s_maxtok=100,
-        # q_context=2048,
-        # a_context=1,
-        # s_context=2048,
+        self
     ):
-        if params is None:
-            raise ValueError("No parameters given")
+        pass
+        # if params is None:
+        #     raise ValueError("No parameters given")
+        # else:
+        #     # Extract the info from the params
+        #     questioner_type = params["questioner_type"] # Options: vicuna
+        #     questioner_model = params["questioner_model"] # Options: TheBloke/vicuna-13B-v1.5-GPTQ, lmsys/vicuna-7b-v1.5, lmsys/vicuna-13b-v1.5
+        #     questioner_device = params["questioner_device"] # Options: cuda:0, cuda:1, cpu
+        #     self.questioner_context = params["questioner_context"] 
+        #     # ANSWERER
+        #     answerer_type = params["answerer_type"] # Options: blip2
+        #     answerer_model = params["answerer_model"] # Options: flant5xxl
+        #     answerer_device = params["answerer_device"] # Options: cuda:0, cuda:1, cpu 
+        #     self.answerer_context = params["answerer_context"]
+
+    def load_questioner(self, questioner_type, questioner_model, questioner_device):
+        # TODO MODIFY IT
+        # Load the questioner
+        print("Loading questioner {}, model {}".format(questioner_type, questioner_model))
+        self.questioner, self.q_tokenizer = load_questioner(questioner_type, questioner_model, questioner_device)
+    
+    def load_answerer(self, answerer_type, answerer_model, answerer_device):
+        # TODO MODIFY IT
+        # Load the questioner
+        print("Loading answerer {}, model {}".format(answerer_type, answerer_model))
+        self.answerer = load_answerer(answerer_type, answerer_model, answerer_device)
+    
+    # TODO load summarizer function
         
-        if params["questioner_type"] is not None:
-            # Load the questioner
-            print("Loading questioner {}", params["questioner_type"])
-            self.questioner, self.q_tokenizer = load_questioner(params["questioner_type"], params["questioner_device"])
-        if answerer is not None:
-            print("Loading answerer..")
-            self.answerer = load_answerer(answerer, a_device)
-
-        if summarizer is not None:
-            if summarizer != questioner:
-                print("Loading summarizer..")
-                self.summarizer, self.s_tokenizer = load_questioner(
-                    summarizer, s_device
-                )  # FIXME rivedere
-            else:
-                self.summarizer = self.questioner
-                self.s_tokenizer = self.q_tokenizer
-
-        self.q_device = q_device
-        self.a_device = a_device
-        self.s_device = s_device
-        self.q_maxtok = q_maxtok
-        self.a_maxtok = a_maxtok
-        self.s_maxtok = s_maxtok
-        self.q_context = q_context
-        self.a_context = a_context
-        self.s_context = s_context
-        self.cc_maxtok = 200  # CHANGE
-
-        self.conversation = Conversation(
-            roles=("USER", "ASSISTANT"),
-            messages=[],
-            sep=" ",
-        )
-
-    def reset_history(self):
-        self.conversation.reset()
-
-    def call_questioner(self, prompt):
-        params = {
-            "prompt": prompt,
-            "max_new_tokens": self.q_maxtok,
-            "temperature": 1.0,
-            "stop": "</s>",
-        }
-        question = generate_stream(
-            params, self.questioner, self.q_tokenizer, self.q_context, self.q_device
-        )
-        return question
-
-    def call_summarizer(self, prompt):
-        params = {
-            "prompt": prompt,
-            "max_new_tokens": self.s_maxtok,
-            "temperature": 1.0,
-            "stop": "</s>",
-        }
-        summary = generate_stream(
-            params, self.summarizer, self.s_tokenizer, self.s_context, self.s_device
-        )
-        return summary
-
-    def call_change_captioner(self, prompt):
-        params = {
-            "prompt": prompt,
-            "max_new_tokens": self.cc_maxtok,
-            "temperature": 1.0,
-            "stop": "</s>",
-        }
-        change_summary = generate_stream(
-            params, self.summarizer, self.s_tokenizer, self.s_context, self.s_device
-        )
-        return change_summary
-
-
-    def ask_question_API(self) -> str:
-        """
-        This function asks a question about the image using the questioner model and the previous chat context
-        """
-        if len(self.conversation.messages) == 0:
-            # first question is given by human to request a general discription
-            question = FIRST_QUESTION
-        else:
-            print("Asking question..")
-            history, prompt = self.conversation.get_vicuna_question_prompt_API()
-            prompt = self.conversation.manipulate_prompt_API(prompt)
-            question = prompt_response_chat(prompt, history)["visible"][-1][1]
-
-        return question
-
-    def question_trim(self, question):
-        question = question.replace("\n", " ").strip()
-        if "user:" in question:  # Some models make up an answer after asking. remove it
-            q = question.split("user:")[0]
-            if (
-                len(q) == 0
-            ):  # some not so clever models will put the question after 'Answer:'.
-                raise ValueError("Question not found")
-            else:
-                question = q.strip()
-        return question
-
-    def answer_question(self, image):
-        """
-        This function answers the question using the answerer model and the previous chat context
-        """
-        print("Answering question..")
-        prompt = self.conversation.get_blip2_prompt(blip_context=self.a_context)
-        answer = self.answerer.ask(image, prompt)
-
-        return answer
-
-    def answer_trim(self, answer):
+    def call_vicuna(self, prompts, generation_config):
         '''
-        It helps in cases in which the answerer model generates a follow-up question after answering given question
+        This function call the questioner model passing the parameters and the prompt. 
+        The questioner model should implement the generate function (huggingface syntax).
+        It can work in batch or not, depending on the length of the prompt list
+        
+        Inputs:
+            - prompts: list of prompts to be passed to the questioner model
+            - generation_config: generation configuration for model.generate() function
         '''
-        answer = answer.split("Question:")[0].replace("\n", " ").strip()
-        return answer
+        # Set the generation config 
+        self.questioner.generation_config = generation_config
+        # Tokenize the prompts
+        input_ids = self.q_tokenizer(prompts, padding=True, return_tensors='pt').input_ids.to(self.questioner.device)
+        # Generate the outputs
+        outputs = self.questioner.generate(inputs=input_ids)
+        # Decode
+        outputs = self.q_tokenizer.batch_decode(outputs, skip_special_tokens=True)
+        # Trim on the last question
+        outputs = [output.split("USER:")[-1].split("?")[0].strip()+"?" for output in outputs]
+        
+        return outputs
 
-    def summarize(self):
-        if len(self.conversation.messages) == 0:
-            raise ValueError("No messages in the conversation")
-        else:
-            summarizer_prompt = self.conversation.get_vicuna_summary_prompt()
-        # summary = self.call_summarizer(summarizer_prompt)
-        return summarizer_prompt
-
-    def change_description(self, summary1, summary2):
-        history, prompt = self.conversation.get_vicuna_change_captioning_prompt_API(
-            summary1, summary2
+    def call_blip2(self, images, prompts):
+        '''
+        Function to call the blip model with images and corresponding prompts. Can work in batch.
+        Inputs: 
+            - images: list of PIL images to be passed to the model
+            - prompts: list of prompts to be passed to the model
+        '''
+        inputs = self.answerer.blip2_processor(images, prompts, return_tensors="pt", padding=True).to(
+            self.answerer.device, torch.float16
         )
-
-        change_summary = prompt_response_chat(prompt, history)["visible"][-1][1]
-        return change_summary
+        outputs = self.answerer.blip2.generate(**inputs)
+        answer = self.answerer.blip2_processor.batch_decode(outputs, skip_special_tokens=True)
+        return answer

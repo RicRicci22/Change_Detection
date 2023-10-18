@@ -14,15 +14,16 @@ BLIP2DICT = {
 
 
 class Blip2:
-    def __init__(self, model, device, bit8=True):
+    def __init__(self, model, device, bit4=True):
         # load BLIP-2 to a single gpu
         self.tag = model
-        self.bit8 = bit8
+        self.bit4 = bit4
         self.device = device
         self.device_id = int(device.split(":")[-1])
 
-        dtype = {"load_in_8bit": True} if self.bit8 else {"torch_dtype": torch.float16}
+        dtype = {"load_in_4bit": True} if self.bit4 else {"torch_dtype": torch.float16}
         self.blip2_processor = Blip2Processor.from_pretrained(BLIP2DICT[self.tag])
+        self.blip2_processor.tokenizer.padding_side = "left"
         self.blip2 = Blip2ForConditionalGeneration.from_pretrained(
             BLIP2DICT[self.tag], device_map={"": self.device_id}, **dtype
         )

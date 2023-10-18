@@ -5,17 +5,28 @@ It can use full image or cropped image to generate the dialogue.
 
 from utils.chat import *
 from utils.dataset import ChatSet
-from PIL import Image
 import os
 import json
 from tqdm import tqdm
 from utils.images_utils import extract_blobs, get_largest_poly, crop_image
 import numpy as np
 import torch
+from utils.dataset import custom_collate
+import pickle
+from transformers import GenerationConfig
 
 def main(llms_params:dict, dataset_params:dict):
     '''
     This function run the dialogue and store the result.
+    
+    Method 
+    Answerer in batch on all images
+    Questioner in batch on all images 
+    Answerer in batch on all images
+    Questioner in batch on all images
+    .. 
+    .. 
+    
     Parameters:
     llm_params: dict
         The parameters for the LLM model.
@@ -40,101 +51,85 @@ def main(llms_params:dict, dataset_params:dict):
         pass 
     
     ########## Initialize the chat ##########
-    chat = Chatter(params=llms_params)
     dialogue_steps = llms_params["dialogue_steps"]
     #########################################
     
-    # Create the dataset that spits images names
-    dataset = ChatSet(dataset_params["dataset_path"], dataset_params["chats_path"])
-    
-    results = dict()
-    
-    for _ in range(dialogue_steps):
-        # Create the dataloader for the questioner 
-        dataloader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=False)
-        for batch in enumerate(tqdm(dataloader)):
-            print(batch)
-    
-#     for img_name in tqdm(images_names):
-#         # Open the images
-#         img_1_pil = Image.open(os.path.join(dataset_params["dataset_path"],"im1",img_name))
-#         img_2_pil =Image.open(os.path.join(dataset_params["dataset_path"],"im2",img_name))
+    for i in range(dialogue_steps):
+        chat = Chatter()
+        print("Step {}".format(i))
+        # ANSWERING 
+        print("Creating the dataset in answering mode")
+        dataset = ChatSet(dataset_params["dataset_path"], dataset_params["chats_path"], mode="answering")
+        dataloader = torch.utils.data.DataLoader(dataset, batch_size=5, shuffle=False, collate_fn = custom_collate)
+        # Loading the answerer model 
+        chat.load_answerer(llms_params["answerer_type"], llms_params["answerer_model"], llms_params["answerer_device"])
+        print("Answering questions in batch")
+        for batch in tqdm(dataloader):
+            img_names, imgs_pre, prompt_pre, chat_pre, imgs_post, prompt_post, chat_post = batch
+            out_pre = chat.call_blip2(imgs_pre, prompt_pre)
+            out_post = chat.call_blip2(imgs_post, prompt_post)
+            # Save the results in the chats_cache
+            for i in range(len(out_pre)):
+                chat_pre[img_names[i]].append(["ASSISTANT", out_pre[i]])
+                chat_post[img_names[i]].append(["ASSISTANT", out_post[i]])
+                # Save the lists in the cache
+                with open(os.path.join(dataset_params["chats_path"], img_names[i].split(".")[0]+"_pre.pkl"), "wb") as file:
+                    pickle.dump(chat_pre[img_names[i]], file)
+                with open(os.path.join(dataset_params["chats_path"], img_names[i].split(".")[0]+"_post.pkl"), "wb") as file:
+                    pickle.dump(chat_post[img_names[i]], file)
+                    
+            break
         
-#         if dataset_params["crop"]:
-#             if dataset_params["use_labels"]:
-#                 mask_1 = Image.open(Image.open(os.path.join(dataset_params["dataset_path"],"label1",img_name)))
-#                 mask_2 = Image.open(Image.open(os.path.join(dataset_params["dataset_path"],"label2",img_name)))
-#             else:
-#                 # Implement the creation of masks for both images 
-#                 raise NotImplementedError("This part is not implemented yet")
+        del chat.answerer
+        torch.cuda.empty_cache()
+        # QUESTIONING 
+        print("Creating the dataset in questioning mode")
+        dataset = ChatSet(dataset_params["dataset_path"], dataset_params["chats_path"], mode="questioning")
+        dataloader = torch.utils.data.DataLoader(dataset, batch_size=5, shuffle=False, collate_fn = custom_collate)
+        # Loading the answerer model 
+        chat.load_questioner(llms_params["questioner_type"], llms_params["questioner_model"], llms_params["questioner_device"])
+        print("Asking questions in batch")
+        ############# SET GENERATION CONFIG #####################################
+        gen_cfg = GenerationConfig.from_pretrained(llms_params["questioner_model"])
+        gen_cfg.max_new_tokens=200
+        gen_cfg.do_sample=False
+        gen_cfg.temperature=0.7
+        gen_cfg.top_p=0.95
+        gen_cfg.top_k=40
+        gen_cfg.repetition_penalty=1.1
+        #########################################################################
+        for batch in tqdm(dataloader):
+            img_names, imgs_pre, prompt_pre, chat_pre, imgs_post, prompt_post, chat_post = batch
+            print(prompt_pre)
+            out_pre = chat.call_vicuna(prompt_pre, gen_cfg)
+            out_post = chat.call_vicuna(prompt_post, gen_cfg)
+            # Save the results in the chats_cache
+            for i in range(len(out_pre)):
+                chat_pre[img_names[i]].append(["USER", out_pre[i]])
+                chat_post[img_names[i]].append(["USER", out_post[i]])
+                # Save the lists in the cache
+                with open(os.path.join(dataset_params["chats_path"], img_names[i].split(".")[0]+"_pre.pkl"), "wb") as file:
+                    pickle.dump(chat_pre[img_names[i]], file)
+                with open(os.path.join(dataset_params["chats_path"], img_names[i].split(".")[0]+"_post.pkl"), "wb") as file:
+                    pickle.dump(chat_post[img_names[i]], file)
             
-#             # Extracts the blobs from the binary masks
-#             mask_array_1 = np.array(mask_1)
-#             polygons_1 = extract_blobs(mask_array_1)
-#             mask_array_2 = np.array(mask_2)
-#             polygons_2 = extract_blobs(mask_array_2)
-
-#             all_poly = polygons_1 + polygons_2
-#             # Get the largest polygon (largest changed area)
-#             largest_polygon = get_largest_poly(all_poly)
-
-#             if largest_polygon and largest_polygon.area>area_threshold:
-#                 # Crop the image and substitute the original image with the cropped one
-#                 img_1_pil = crop_image(img_1_pil, largest_polygon)
-#                 img_2_pil = crop_image(img_2_pil, largest_polygon)
-
-#         for _ in range(dialogue_steps):
-#             # Pseudocode
-#             # Provide the first template question for all the images
-#             # question is a dictioanry with the name of the image and a list of questions and answers
-#             # Answer the question in batch with the answerer 
-#             #  
-#             # 
-#             question = chat.ask_question_API()
-#             question = chat.question_trim(question)
-#             chat.conversation.append_question(question)
-#             # Answer in batch
-#             answer = chat.answer_question(crop_1)
-#             chat.conversation.append_answer(answer)
-
-#             # Save in the dict
-#             questions, answers = chat.conversation.return_messages()
-#             results[img_name] = [{"questions": questions, "answers": answers}]
-
-#             chat.reset_history()
-
-#             for i in range(dialogue_steps):
-#                 question = chat.ask_question_API()
-#                 question = chat.question_trim(question)
-#                 chat.conversation.append_question(question)
-#                 answer = chat.answer_question(crop_2)
-#                 chat.conversation.append_answer(answer)
-
-#             questions, answers = chat.conversation.return_messages()
-
-#             results[img_name].append({"questions": questions, "answers": answers})
-
-#             chat.reset_history()
-#         else:
-#             print("Polygon too small!")
-#     else:
-#         print("No polygon found for image: {}, or polygon too small".format(img_name))
-
-# # Save the dict
-# with open("results/img_dialogues_crop.json", "w") as file:
-#     json.dump(results, file, indent=4)
+            break
+        
+        del chat.questioner
+        del chat
+        torch.cuda.empty_cache()
     
-
+        if i==3:
+            break
     
-
 if __name__ == "__main__":
     llms_params = {
         "answerer_type": "blip2",
-        "answerer_model": "flantxxl", # To revise
-        "answerer_device": "cuda:1",
+        "answerer_model": "FlanT5 XXL", # To revise
+        "answerer_device": "cuda:0",
         "dialogue_steps": 10, # How many rounds of dialogue to generate
         "questioner_type": "vicuna",
-        "questioner_model": "vicuna1.5", # To revise
+        "questioner_model": "TheBloke/vicuna-13B-v1.5-GPTQ", # lmsys/vicuna-7b-v1.5, lmsys/vicuna-13b-v1.5
         "questioner_device": "cuda:0",
     }
     
@@ -146,89 +141,9 @@ if __name__ == "__main__":
         "use_labels": True, # If true, it can use the labels to crop the image in the area of the biggest change
     }
     
+    
+    # with open("chats_cache/00017_pre.pkl", "rb") as file:
+    #     conv = pickle.load(file)
+        
+    # print(conv)
     main(llms_params, dataset_params)
-    
-    # # Path of dataset images. here two because they are pre/post change images.
-    # dataset_path_im1 = "/media/melgani/Melgani/Riccardo/Datasets/segmentation/Semantic segmentation/second_dataset/public/test/im1"
-    # dataset_path_im2 = "/media/melgani/Melgani/Riccardo/Datasets/segmentation/Semantic segmentation/second_dataset/public/test/im2"
-    # crop = False
-    # # Path of dataset labels. Not needed if crop is set to false
-    # dataset_path_labels_1 = "/media/melgani/Melgani/Riccardo/Datasets/segmentation/Semantic segmentation/second_dataset/public/test/label1"
-    # dataset_path_labels_2 = "/media/melgani/Melgani/Riccardo/Datasets/segmentation/Semantic segmentation/second_dataset/public/test/label2"
-
-    # with open("CDVQA_dataset/Test_CD_VQA_summary_Final.json", "r") as file:
-    #     test_merged = json.load(file)
-    
-    # area_threshold = 5
-
-    # results = dict()
-    
-    # device_answerer = "cuda:1"
-    # chat = Chatter(
-    #     answerer="blip2",
-    #     a_device=device_answerer,
-    # )
-    # dialogue_steps = 10
-
-    # for element in tqdm(test_merged["CDVQA"]):
-    #     img_name = element["image"]
-    #     path_image_1 = os.path.join(dataset_path_im1, img_name)
-    #     path_image_2 = os.path.join(dataset_path_im2, img_name)
-
-    #     path_label_1 = os.path.join(dataset_path_labels_1, img_name)
-    #     path_label_2 = os.path.join(dataset_path_labels_2, img_name)
-
-    #     mask_1 = Image.open(path_label_1)
-    #     mask_2 = Image.open(path_label_2)
-
-    #     img_1_pil = Image.open(path_image_1)
-    #     img_2_pil = Image.open(path_image_2)
-
-    #     mask_array_1 = np.array(mask_1)
-    #     polygons_1 = extract_blobs(mask_array_1)
-
-    #     mask_array_2 = np.array(mask_2)
-    #     polygons_2 = extract_blobs(mask_array_2)
-
-    #     all_poly = polygons_1 + polygons_2
-    #     # Get the largest polygon (largest changed area)
-    #     largest_polygon = get_largest_poly(all_poly)
-
-    #     if largest_polygon and largest_polygon.area>area_threshold:
-    #         crop_1 = crop_image(img_1_pil, largest_polygon)
-    #         crop_2 = crop_image(img_2_pil, largest_polygon)
-
-    #         if crop_1.size[0]>1 and crop_1.size[0]>1:
-    #             for i in range(dialogue_steps):
-    #                 question = chat.ask_question_API()
-    #                 question = chat.question_trim(question)
-    #                 chat.conversation.append_question(question)
-    #                 answer = chat.answer_question(crop_1)
-    #                 chat.conversation.append_answer(answer)
-
-    #             # Save in the dict
-    #             questions, answers = chat.conversation.return_messages()
-    #             results[img_name] = [{"questions": questions, "answers": answers}]
-
-    #             chat.reset_history()
-
-    #             for i in range(dialogue_steps):
-    #                 question = chat.ask_question_API()
-    #                 question = chat.question_trim(question)
-    #                 chat.conversation.append_question(question)
-    #                 answer = chat.answer_question(crop_2)
-    #                 chat.conversation.append_answer(answer)
-
-    #             questions, answers = chat.conversation.return_messages()
-
-    #             results[img_name].append({"questions": questions, "answers": answers})
-
-    #             chat.reset_history()
-    #         else:
-    #             print("Polygon too small!")
-    #     else:
-    #         print("No polygon found for image: {}, or polygon too small".format(img_name))
-
-    # # Save the dict
-    # with open("results/img_dialogues_crop.json", "w") as file:
-    #     json.dump(results, file, indent=4)
