@@ -109,7 +109,7 @@ class Chatter:
         # Decode
         outputs = self.q_tokenizer.batch_decode(outputs, skip_special_tokens=True)
         # Trim on the last question
-        outputs = [output.split("USER:")[-1].split("?")[0].strip()+"?" for output in outputs]
+        outputs = [output.split("ASSISTANT:")[-1].split("?")[0].strip()+"?" for output in outputs]
         
         return outputs
 
@@ -123,6 +123,6 @@ class Chatter:
         inputs = self.answerer.blip2_processor(images, prompts, return_tensors="pt", padding=True).to(
             self.answerer.device, torch.float16
         )
-        outputs = self.answerer.blip2.generate(**inputs)
+        outputs = self.answerer.blip2.generate(**inputs, max_new_tokens=100)
         answer = self.answerer.blip2_processor.batch_decode(outputs, skip_special_tokens=True)
         return answer

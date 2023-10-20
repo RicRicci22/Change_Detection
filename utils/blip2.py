@@ -24,9 +24,14 @@ class Blip2:
         dtype = {"load_in_4bit": True} if self.bit4 else {"torch_dtype": torch.float16}
         self.blip2_processor = Blip2Processor.from_pretrained(BLIP2DICT[self.tag])
         self.blip2_processor.tokenizer.padding_side = "left"
-        self.blip2 = Blip2ForConditionalGeneration.from_pretrained(
-            BLIP2DICT[self.tag], device_map={"": self.device_id}, **dtype
-        )
+        if self.bit4:
+            self.blip2 = Blip2ForConditionalGeneration.from_pretrained(
+                BLIP2DICT[self.tag], device_map={"": self.device_id}, bnb_4bit_compute_dtype=torch.float16, **dtype
+            )
+        else:
+            self.blip2 = Blip2ForConditionalGeneration.from_pretrained(
+                BLIP2DICT[self.tag], device_map={"": self.device_id}, **dtype
+            )
 
     def ask(self, raw_image, question):
         inputs = self.blip2_processor(raw_image, question, return_tensors="pt").to(

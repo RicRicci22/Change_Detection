@@ -3,16 +3,15 @@ from typing import List
 
 QUESTION_INSTRUCTION = (
     "A chat between a curious user and an artificial intelligence assistant. " 
-    "The assistant asks meaningful, detailed, accurate questions to the user based on the context provided by the description provided by the user and the next questions answer pairs. "
-    "The questions must explore contents of the image by asking questions. "
-    "The questions are answered by the user just by looking at the satellite image. "
-    "Questions must be specific and useful in the remote sensing field."
+    "The assistant asks meaningful, detailed, accurate questions to the user based on the context. "
+    "The questions serves as a way to explore further the satellite image contents. "
+    "The context consists of a brief description provided by the user and all the next questions and answers. "
+    "The questions must be posed such as to be answered just by looking at the satellite image on a screen. "
+    "Provide one question at a time."
 )
 
 ANSWER_INSTRUCTION = (
-    "Answer the question. "
-    "If you are not sure about the answer, say you don't know honestly. "
-    "Don't imagine any contents that are not in the image."
+    "Answer the question. If you are not sure about the answer, say you don't know honestly."
 )
 
 SUMMARY_INSTRUCTION = (
@@ -124,18 +123,17 @@ class Conversation:
         
         for message in messages:
             role, message = message
+            # Check the message
             if message != "":
-                # Check the message 
-                if role != "ASSISTANT":
+                if role == "USER":
                     if message[-1] != ".":
                         message += "."
-                    prompt += role + ": " + message + self.sep
                 else:
                     if message[-1] != "?":
                         message += "?"
-                    prompt += role + ": " + message + self.sep2
-            else:
-                raise ValueError("History cannot contain empty messages!")
+        
+            prompt += role + ": " + message + self.sep2
+                
         
         # Append the last role and optional last message
         # Check last message 
@@ -179,7 +177,7 @@ class Conversation:
         if system[-1] != ".":
             system += "."
         
-        prompt = ""
+        prompt = self.a_system + self.sep
 
         # Check that the last message is from the USER (a question)
         if messages[-1][0] != self.roles[1]:
@@ -188,8 +186,6 @@ class Conversation:
         for message in messages:
             role, message = message
             if message != "":
-                if message[-1] != ".":
-                    message += "."
                 if role == "ASSISTANT":
                     prompt += "Question: " + message + self.sep
                 else:
@@ -201,7 +197,7 @@ class Conversation:
                 raise ValueError("History cannot contain empty messages!")
         
         # Append the last role and optional last message
-        prompt += self.a_system + self.sep + "Answer:"
+        prompt += "Answer:"
         return prompt
     
     def return_messages(self):

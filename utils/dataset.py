@@ -56,12 +56,11 @@ class ChatSet(Dataset):
         if(os.path.exists(chat_pre_path)):
             with open(chat_pre_path, "rb") as file:
                 chat_pre = pickle.load(file)
-            print(chat_pre)
             self.conversation.reset_messages()
             self.conversation.load_messages(chat_pre)
             if(self.mode=="answering"):
                 # Get answer prompt 
-                prompt_pre = self.conversation.get_answer_prompt(model="blip2", context=self.context)
+                prompt_pre = self.conversation.get_answer_prompt(model="blip2", context=1)
             elif(self.mode=="questioning"):
                 prompt_pre = self.conversation.get_question_prompt(model="vicuna", context=self.context)
             elif self.mode == "summarization":
@@ -80,7 +79,7 @@ class ChatSet(Dataset):
             self.conversation.load_messages(chat_post)
             if(self.mode=="answering"):
                 # Get answer prompt 
-                prompt_post = self.conversation.get_answer_prompt(model="blip2", context=self.context)
+                prompt_post = self.conversation.get_answer_prompt(model="blip2", context=1)
             elif(self.mode=="questioning"):
                 prompt_post = self.conversation.get_question_prompt(model="vicuna", context=self.context)
             elif self.mode == "summarization":

@@ -5,7 +5,7 @@ from typing import Iterable
 
 def load_hug_model(model, device):
     tokenizer = AutoTokenizer.from_pretrained(model, use_fast=True, padding_side="left")
-    tokenizer.pad_token = tokenizer.eos_token
+    #tokenizer.pad_token = tokenizer.eos_token
     
     model = AutoModelForCausalLM.from_pretrained(model,
                                                 device_map=device,
