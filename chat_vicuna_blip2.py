@@ -50,82 +50,82 @@ def main(llms_params:dict, dataset_params:dict):
     ########## Initialize the chat ##########
     dialogue_steps = llms_params["dialogue_steps"]
     #########################################
-    
-    for i in range(dialogue_steps):
-        chat = Chatter()
-        print("Step {}".format(i))
-        # ANSWERING 
-        print("Creating the dataset in answering mode")
-        dataset = ChatSet(dataset_params["dataset_path"], dataset_params["chats_path"], mode="answering")
-        dataloader = torch.utils.data.DataLoader(dataset, batch_size=4, shuffle=False, collate_fn = custom_collate)
-        # Loading the answerer model 
-        chat.load_answerer(llms_params["answerer_type"], llms_params["answerer_model"], llms_params["answerer_device"])
-        print("Answering questions in batch")
-        for batch in tqdm(dataloader):
-            img_names, imgs_pre, prompt_pre, chat_pre, imgs_post, prompt_post, chat_post = batch
-            # print("answering")
-            # print(prompt_pre)
-            out_pre = chat.call_blip2(imgs_pre, prompt_pre)
-            out_post = chat.call_blip2(imgs_post, prompt_post)
-            # Save the results in the chats_cache
-            for i in range(len(out_pre)):
-                chat_pre[img_names[i]].append(["USER", out_pre[i]])
-                chat_post[img_names[i]].append(["USER", out_post[i]])
-                # Save the lists in the cache
-                with open(os.path.join(dataset_params["chats_path"], img_names[i].split(".")[0]+"_pre.pkl"), "wb") as file:
-                    pickle.dump(chat_pre[img_names[i]], file)
-                with open(os.path.join(dataset_params["chats_path"], img_names[i].split(".")[0]+"_post.pkl"), "wb") as file:
-                    pickle.dump(chat_post[img_names[i]], file)
-                    
-        
-        del chat.answerer
-        torch.cuda.empty_cache()
-        # QUESTIONING 
-        print("Creating the dataset in questioning mode")
-        dataset = ChatSet(dataset_params["dataset_path"], dataset_params["chats_path"], mode="questioning")
-        dataloader = torch.utils.data.DataLoader(dataset, batch_size=4, shuffle=False, collate_fn = custom_collate)
-        # Loading the answerer model 
-        chat.load_questioner(llms_params["questioner_type"], llms_params["questioner_model"], llms_params["questioner_device"])
-        print("Asking questions in batch")
-        ############# SET GENERATION CONFIG #####################################
-        gen_cfg = GenerationConfig.from_pretrained(llms_params["questioner_model"])
-        gen_cfg.max_new_tokens=200
-        gen_cfg.do_sample=True
-        gen_cfg.temperature=0.6
-        gen_cfg.top_p=0.95
-        gen_cfg.top_k=40
-        gen_cfg.repetition_penalty=1.1
-        #########################################################################
-        for batch in tqdm(dataloader):
-            img_names, imgs_pre, prompt_pre, chat_pre, imgs_post, prompt_post, chat_post = batch
-            # print("questioning")
-            # print(prompt_pre)
-            out_pre = chat.call_vicuna(prompt_pre, gen_cfg)
-            out_post = chat.call_vicuna(prompt_post, gen_cfg)
-            # Save the results in the chats_cache
-            for i in range(len(out_pre)):
-                chat_pre[img_names[i]].append(["ASSISTANT", out_pre[i]])
-                chat_post[img_names[i]].append(["ASSISTANT", out_post[i]])
-                # Save the lists in the cache
-                with open(os.path.join(dataset_params["chats_path"], img_names[i].split(".")[0]+"_pre.pkl"), "wb") as file:
-                    pickle.dump(chat_pre[img_names[i]], file)
-                with open(os.path.join(dataset_params["chats_path"], img_names[i].split(".")[0]+"_post.pkl"), "wb") as file:
-                    pickle.dump(chat_post[img_names[i]], file)
+    with torch.no_grad():
+        for i in range(dialogue_steps):
+            chat = Chatter()
+            print("Step {}".format(i))
+            # ANSWERING 
+            print("Creating the dataset in answering mode")
+            dataset = ChatSet(dataset_params["dataset_path"], dataset_params["chats_path"], mode="answering")
+            dataloader = torch.utils.data.DataLoader(dataset, batch_size=4, shuffle=False, collate_fn = custom_collate)
+            # Loading the answerer model 
+            chat.load_answerer(llms_params["answerer_type"], llms_params["answerer_model"], llms_params["answerer_device"])
+            print("Answering questions in batch")
+            for batch in tqdm(dataloader):
+                img_names, imgs_pre, prompt_pre, chat_pre, imgs_post, prompt_post, chat_post = batch
+                # print("answering")
+                # print(prompt_pre)
+                out_pre = chat.call_blip2(imgs_pre, prompt_pre)
+                out_post = chat.call_blip2(imgs_post, prompt_post)
+                # Save the results in the chats_cache
+                for i in range(len(out_pre)):
+                    chat_pre[img_names[i]].append(["USER", out_pre[i]])
+                    chat_post[img_names[i]].append(["USER", out_post[i]])
+                    # Save the lists in the cache
+                    with open(os.path.join(dataset_params["chats_path"], img_names[i].split(".")[0]+"_pre.pkl"), "wb") as file:
+                        pickle.dump(chat_pre[img_names[i]], file)
+                    with open(os.path.join(dataset_params["chats_path"], img_names[i].split(".")[0]+"_post.pkl"), "wb") as file:
+                        pickle.dump(chat_post[img_names[i]], file)
+                        
             
-            
-        del chat.questioner
-        del chat
-        torch.cuda.empty_cache()
+            del chat.answerer
+            torch.cuda.empty_cache()
+            # QUESTIONING 
+            print("Creating the dataset in questioning mode")
+            dataset = ChatSet(dataset_params["dataset_path"], dataset_params["chats_path"], mode="questioning")
+            dataloader = torch.utils.data.DataLoader(dataset, batch_size=4, shuffle=False, collate_fn = custom_collate)
+            # Loading the answerer model 
+            chat.load_questioner(llms_params["questioner_type"], llms_params["questioner_model"], llms_params["questioner_device"])
+            print("Asking questions in batch")
+            ############# SET GENERATION CONFIG #####################################
+            gen_cfg = GenerationConfig.from_pretrained(llms_params["questioner_model"])
+            gen_cfg.max_new_tokens=200
+            gen_cfg.do_sample=True
+            gen_cfg.temperature=0.6
+            gen_cfg.top_p=0.95
+            gen_cfg.top_k=40
+            gen_cfg.repetition_penalty=1.1
+            #########################################################################
+            for batch in tqdm(dataloader):
+                img_names, imgs_pre, prompt_pre, chat_pre, imgs_post, prompt_post, chat_post = batch
+                # print("questioning")
+                # print(prompt_pre)
+                out_pre = chat.call_vicuna(prompt_pre, gen_cfg)
+                out_post = chat.call_vicuna(prompt_post, gen_cfg)
+                # Save the results in the chats_cache
+                for i in range(len(out_pre)):
+                    chat_pre[img_names[i]].append(["ASSISTANT", out_pre[i]])
+                    chat_post[img_names[i]].append(["ASSISTANT", out_post[i]])
+                    # Save the lists in the cache
+                    with open(os.path.join(dataset_params["chats_path"], img_names[i].split(".")[0]+"_pre.pkl"), "wb") as file:
+                        pickle.dump(chat_pre[img_names[i]], file)
+                    with open(os.path.join(dataset_params["chats_path"], img_names[i].split(".")[0]+"_post.pkl"), "wb") as file:
+                        pickle.dump(chat_post[img_names[i]], file)
+                
+                
+            del chat.questioner
+            del chat
+            torch.cuda.empty_cache()
     
 if __name__ == "__main__":
     llms_params = {
         "answerer_type": "blip2",
         "answerer_model": "FlanT5 XXL", # To revise
-        "answerer_device": "cuda:0",
+        "answerer_device": "cuda:1",
         "dialogue_steps": 10, # How many rounds of dialogue to generate
         "questioner_type": "vicuna",
         "questioner_model": "TheBloke/vicuna-13B-v1.5-GPTQ", # lmsys/vicuna-7b-v1.5, lmsys/vicuna-13b-v1.5
-        "questioner_device": "cuda:0",
+        "questioner_device": "cuda:1",
     }
     
     dataset_params = {
@@ -137,8 +137,8 @@ if __name__ == "__main__":
     }
     
     
-    # with open("chats_cache/00017_post.pkl", "rb") as file:
-    #     conv = pickle.load(file)
+    with open("chats_cache/00031_post.pkl", "rb") as file:
+        conv = pickle.load(file)
         
-    # print(conv)
-    main(llms_params, dataset_params)
+    print(conv)
+    # main(llms_params, dataset_params)
