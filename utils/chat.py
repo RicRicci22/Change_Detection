@@ -124,9 +124,9 @@ class Chatter:
             - images: list of PIL images to be passed to the model
             - prompts: list of prompts to be passed to the model
         '''
-        inputs = self.answerer.blip2_processor(images, prompts, return_tensors="pt", padding=True).to(
-            self.answerer.device, torch.float16
+        inputs = self.multimodal_model.blip2_processor(images, prompts, return_tensors="pt", padding=True).to(
+            self.device_lmm, torch.float16
         )
-        outputs = self.answerer.blip2.generate(**inputs, max_new_tokens=100)
-        answer = self.answerer.blip2_processor.batch_decode(outputs, skip_special_tokens=True)
+        outputs = self.multimodal_model.blip2.generate(**inputs, max_new_tokens=100)
+        answer = self.multimodal_model.blip2_processor.batch_decode(outputs, skip_special_tokens=True)
         return answer
