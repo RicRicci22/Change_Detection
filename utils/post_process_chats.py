@@ -19,9 +19,14 @@ def read_chats(path:str):
             chats[file] = pickle.load(f)[:-1]
     return chats
 
-def remove_no_answers(dict_in:dict):
+def remove_answers(dict_in:dict, answers_blacklist:list):
     '''
-    This function removes the questions that have a "no" answer.
+    This function removes the rounds that have an answer that is in the answers_blacklist list.
+    Input:
+        dict_in: dict -> dictionary containing the chats
+        answers_blacklist: list -> list of answers to remove
+    Output: 
+        dict_out: dict -> cleaned dictionary
     '''
     dict_out = {}
     discarded = 0 
@@ -31,22 +36,22 @@ def remove_no_answers(dict_in:dict):
             question = dict_in[key][i*2]
             answer = dict_in[key][i*2+1]
             all+=1
-            if(answer[1] != "no"):
+            if(answer[1] in answers_blacklist):
+                discarded+=1
+            else:
                 if key not in dict_out.keys():
                     dict_out[key] = []
                 dict_out[key].append(question)
                 dict_out[key].append(answer)
-            else:
-                discarded+=1
     
     print("All questions: ", all)
     print("Discarded questions: ", discarded)
     
     return dict_out
 
-def remove_answers_ending_with_point(dict_in:dict):
+def remove_affirmative_questions(dict_in:dict):
     '''
-    This function removes the questions that end with a point.
+    This function removes the questions ending with a point.
     '''
     dict_out = {}
     discarded = 0 
@@ -69,47 +74,25 @@ def remove_answers_ending_with_point(dict_in:dict):
     
     return dict_out
 
-def discard_dont_know(dict_in:dict):
-    '''
-    This function removes the questions that have a "don't know" answer.
-    '''
-    dict_out = {}
-    discarded = 0 
-    all = 0 
-    for key in dict_in.keys():
-        for i in range(int(len(dict_in[key])/2)):
-            question = dict_in[key][i*2]
-            answer = dict_in[key][i*2+1]
-            all+=1
-            if(answer[1] != "don't know" and answer[1] != "not sure"):
-                if key not in dict_out.keys():
-                    dict_out[key] = []
-                dict_out[key].append(question)
-                dict_out[key].append(answer)
-            else:
-                discarded+=1
-    
-    print("All questions: ", all)
-    print("Discarded questions: ", discarded)
-    
-    return dict_out
-
 def save_dict(dict_in:dict, path:str):
     '''
     This function saves the dictionary in a path using json formatting.
     '''
     with open(path, "w") as f:
         json.dump(dict_in, f, indent=4)
-
+        
+def chats_postprocessing(path_in:str, path_out:str)-> None:
+    '''
+    This function handles the complete post-processing of the chats
+    '''
+    chats = read_chats(path_in)
+    # Remove round with answer "no"
+    chats = remove_answers(chats, answers_blacklist=["no", "don't know", "not sure"])
+    # Remove questions ending with a point
+    chats = remove_affirmative_questions(chats)
+    # Save the dict
+    save_dict(chats, path_out)
 
 if __name__=="__main__":
-    path = "chats_cache"
-    out = read_chats(path)
-    print("Total number of images: ", len(out))
-    dict_out = remove_no_answers(out)
-    dict_out = remove_answers_ending_with_point(dict_out)
-    dict_out = discard_dont_know(dict_out)
-    path = "chats.json"
-    save_dict(dict_out, path)
-    
+    chats_postprocessing("chats_cache", "chats_postprocessed.json")
     
