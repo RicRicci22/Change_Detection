@@ -12,8 +12,8 @@ def load_hug_model(model, device):
                                                 trust_remote_code=False,
                                                 revision="main")
 
-    if hasattr(model.config, "max_sequence_length"):
-        context_len = model.config.max_sequence_length
+    if hasattr(model.config, "max_length"):
+        context_len = model.config.max_length
     else:
         context_len = "Unknown"
     

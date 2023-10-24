@@ -4,6 +4,7 @@ from typing import Any
 from PIL import Image
 from utils.conversation import Conversation
 import pickle
+import json
 
 def custom_collate(original_batch):
     '''
@@ -91,4 +92,18 @@ class ChatSet(Dataset):
             prompt_post = self.conversation.get_answer_prompt(model="blip2", context=self.context)
             
         return self.images_names[index], im_pre, prompt_pre, chat_pre,  im_post, prompt_post, chat_post
+
+class SummarySet(Dataset):
+    def __init__(self, chats_path):
+        # Open the dict of chats
+        with open(chats_path, "rb") as file:
+            self.chats = json.load(file)
+            self.image_names = list(self.chats.keys())
+    
+    def __len__(self):
+        return len(self.image_names)
+
+    def __getitem__(self, index):
+        image_name = self.image_names[index]
+        return image_name, self.chats[image_name]
     

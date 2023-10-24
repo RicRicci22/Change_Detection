@@ -1,27 +1,26 @@
 from dataclasses import dataclass, field
 from typing import List
+from utils.chat import Chatter
+from transformers import GenerationConfig
 
 QUESTION_INSTRUCTION = (
     "A chat between a curious user and an artificial intelligence assistant. " 
-    "The assistant asks meaningful, detailed, accurate questions to the user based on the context. "
-    "The questions serves as a way to explore further the satellite image contents. "
-    "The context consists of a brief description provided by the user and all the next questions and answers. "
-    "The questions must be posed such as to be answered just by looking at the satellite image on a screen. "
-    "Provide one question at a time."
+    "The assistant asks meaningful, detailed, accurate questions to the user based on the context given by the initial description provided by the user and the next questions and answers. "
+    "The questions serves to explore further the satellite image contents. "
+    "No questions should be posed about specific names of the places in the image, since it is difficult to know them just by looking at the image."
 )
 
 ANSWER_INSTRUCTION = (
-    "Answer the question. If you are not sure about the answer, say you don't know honestly."
+    "Answer the question. If you are unsure on the answer, say you don't know."
 )
 
 SUMMARY_INSTRUCTION = (
-    "Summarize the information in the chat between the assistant and the user, creating a descriptive paragraph of the contents of the image. "
-    "Don't add information. Don't miss information."
+    "Analyze the chat between the user and the assistant. Create the shortest description of the image from it."
 )
 
 CHANGE_INSTRUCTION = (
     "I will provide descriptions of two remote sensing images taken at the same location at different times. "
-    "You are a useful ASSISTANT, and you generate a textual paragraph summarizing the changes occurred, if any, based solely on the two descriptions. "
+    "You are a useful ASSISTANT, and you generate a summarized textual paragraph the changes occurred, if any, based solely on the two descriptions. "
     "Don't add information. Don't miss information."
 )
 
@@ -128,19 +127,18 @@ class Conversation:
                 if role == "USER":
                     if message[-1] != ".":
                         message += "."
+                        prompt += role + ": " + message + self.sep
                 else:
                     if message[-1] != "?":
                         message += "?"
-        
-            prompt += role + ": " + message + self.sep2
+                    prompt += role + ": " + message + self.sep2
                 
-        
         # Append the last role and optional last message
         # Check last message 
         if last_message != "":
-            if last_message[-1] != ".":
+            if last_message.strip()[-1] != ".":
                 last_message += "."
-            prompt = prompt[:-1] + "." + self.sep + last_message + self.sep + self.roles[1] + ":"
+            prompt += last_message + self.sep + self.roles[1] + ":"
         else:
             prompt += self.roles[1] + ":"
         return prompt
@@ -219,16 +217,27 @@ class Conversation:
 
 if __name__ == "__main__":
     conv_v1 = Conversation()
+    chat = Chatter()
     # Simulate a conversation
     question1 = "give a detailed description of this satellite image"
     answer1 = "An image of a blue sky"
     question2 = "What is the color of the sky?"
     answer2 = "Blue"
     question3 = "What is the color of the sea?"
-    answer3 = "Blue"
-    messages = [["ASSISTANT", question1], ["USER", answer1], ["ASSISTANT", question2], ["USER", answer2], ["ASSISTANT", question3]]
+    answer3 = "Black"
+    messages = [["ASSISTANT", question1], ["USER", answer1], ["ASSISTANT", question2], ["USER", answer2], ["ASSISTANT", question3],["USER", answer3]]
+    #messages = [["ASSISTANT", question1], ["USER", answer1]]
     conv_v1.load_messages(messages)
     # Get the prompt for the next question
-    prompt = conv_v1.get_answer_prompt(context=100)
-    print(prompt)
-    
+    prompt = conv_v1.get_summary_prompt(context=100)
+    chat.load_llm("vicuna", "TheBloke/vicuna-13B-v1.5-GPTQ", "cuda:1")
+    gen_cfg = GenerationConfig.from_pretrained("TheBloke/vicuna-13B-v1.5-GPTQ")
+    gen_cfg.max_new_tokens=200
+    gen_cfg.do_sample=True
+    gen_cfg.temperature=0.7
+    gen_cfg.top_p=0.95
+    gen_cfg.top_k=40
+    gen_cfg.repetition_penalty=1.1
+    out = chat.call_vicuna(prompt, gen_cfg, task="summarization")
+    print(prompt+"\n\n")
+    print(out)

@@ -4,7 +4,7 @@ It can use full image or cropped image to generate the dialogue.
 '''
 
 from utils.chat import *
-from utils.dataset import ChatSet
+from utils.dataset import ChatSet, SummarySet
 import os
 from tqdm import tqdm
 import torch
@@ -12,7 +12,7 @@ from utils.dataset import custom_collate
 import pickle
 from transformers import GenerationConfig
 
-def main(llms_params:dict, dataset_params:dict):
+def chat_on_images(llms_params:dict, dataset_params:dict):
     '''
     This function run the dialogue and store the result.
     
@@ -63,8 +63,8 @@ def main(llms_params:dict, dataset_params:dict):
             print("Answering questions in batch")
             for batch in tqdm(dataloader):
                 img_names, imgs_pre, prompt_pre, chat_pre, imgs_post, prompt_post, chat_post = batch
-                # print("answering")
-                # print(prompt_pre)
+                print("answering")
+                print(prompt_pre)
                 out_pre = chat.call_blip2(imgs_pre, prompt_pre)
                 out_post = chat.call_blip2(imgs_post, prompt_post)
                 # Save the results in the chats_cache
@@ -77,7 +77,7 @@ def main(llms_params:dict, dataset_params:dict):
                     with open(os.path.join(dataset_params["chats_path"], img_names[i].split(".")[0]+"_post.pkl"), "wb") as file:
                         pickle.dump(chat_post[img_names[i]], file)
                         
-            
+                break
             del chat.answerer
             torch.cuda.empty_cache()
             # QUESTIONING 
@@ -98,8 +98,8 @@ def main(llms_params:dict, dataset_params:dict):
             #########################################################################
             for batch in tqdm(dataloader):
                 img_names, imgs_pre, prompt_pre, chat_pre, imgs_post, prompt_post, chat_post = batch
-                # print("questioning")
-                # print(prompt_pre)
+                print("questioning")
+                print(prompt_pre)
                 out_pre = chat.call_vicuna(prompt_pre, gen_cfg)
                 out_post = chat.call_vicuna(prompt_post, gen_cfg)
                 # Save the results in the chats_cache
@@ -112,10 +112,38 @@ def main(llms_params:dict, dataset_params:dict):
                     with open(os.path.join(dataset_params["chats_path"], img_names[i].split(".")[0]+"_post.pkl"), "wb") as file:
                         pickle.dump(chat_post[img_names[i]], file)
                 
-                
+                break
+            
             del chat.questioner
             del chat
             torch.cuda.empty_cache()
+
+def summarize_chats(llms_params:dict, path_dict_chats:str):
+    '''
+    Given some llms_params for generation and a dict of chats in the form {img_name: chat_list}, it generates a summary of the chats.
+    Input:
+    llms_params: dict
+        The parameters for the LLM model.
+    path_dict_chats: stri
+        The path of the dictionary of chats (dictionary should be in the form {img_name: chat_list})
+    Returns 
+    summaries: dict
+        The dictionary of summaries in the form {img_name: summary}
+    '''
+    assert llms_params["summarizer_type"] in ["vicuna"], "Summarizer not supported"
+    # Sanity checks on dataset params
+    assert os.path.exists(path_dict_chats), "dict_chats not found"
+    
+    dataset = SummarySet(path_dict_chats)
+    dataloader = torch.utils.data.DataLoader(dataset, batch_size=8, shuffle=False)
+    for batch in tqdm(dataloader):
+        img_names, chats = batch
+        print(img_names)
+        print(chats)
+        break
+    
+    
+    
     
 if __name__ == "__main__":
     llms_params = {
@@ -126,6 +154,8 @@ if __name__ == "__main__":
         "questioner_type": "vicuna",
         "questioner_model": "TheBloke/vicuna-13B-v1.5-GPTQ", # lmsys/vicuna-7b-v1.5, lmsys/vicuna-13b-v1.5
         "questioner_device": "cuda:1",
+        "summarizer_type": "vicuna",
+        "summarizer_model": "TheBloke/vicuna-13B-v1.5-GPTQ",
     }
     
     dataset_params = {
@@ -136,9 +166,6 @@ if __name__ == "__main__":
         "use_labels": True, # If true, it can use the labels to crop the image in the area of the biggest change
     }
     
+    json_path = "out.json"
+    summarize_chats(llms_params, json_path)
     
-    with open("chats_cache/00031_post.pkl", "rb") as file:
-        conv = pickle.load(file)
-        
-    print(conv)
-    # main(llms_params, dataset_params)
