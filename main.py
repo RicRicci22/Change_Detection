@@ -155,7 +155,7 @@ def summarize_chats(llms_params:dict, path_dict_chats:str):
     
     # Save the dict of summaries
     with open("summaries.json", "w") as file:
-        json.dump(results, file)
+        json.dump(results, file, indent=4)
     
     return
 
@@ -195,7 +195,7 @@ def generate_cd(llms_params:dict, path_dict_summaries:str):
 
     # Save the dict of summaries
     with open("cds.json", "w") as file:
-        json.dump(results, file)
+        json.dump(results, file, indent=4)
     
     return
         
