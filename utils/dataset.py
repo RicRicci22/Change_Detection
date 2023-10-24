@@ -64,11 +64,9 @@ class ChatSet(Dataset):
                 prompt_pre = self.conversation.get_answer_prompt(model="blip2", context=1)
             elif(self.mode=="questioning"):
                 prompt_pre = self.conversation.get_question_prompt(model="vicuna", context=self.context)
-            elif self.mode == "summarization":
-                prompt_pre = self.conversation.get_summary_prompt(model="vicuna", context=self.context)
         else:
             assert self.mode=="answering"
-            chat_pre = [["ASSISTANT", "give a detailed description of this satellite image."]]
+            chat_pre = [["ASSISTANT", "Can you give a detailed description of this satellite image?"]]
             self.conversation.load_messages(chat_pre)
             prompt_pre = self.conversation.get_answer_prompt(model="blip2", context=self.context)
         
@@ -83,11 +81,9 @@ class ChatSet(Dataset):
                 prompt_post = self.conversation.get_answer_prompt(model="blip2", context=1)
             elif(self.mode=="questioning"):
                 prompt_post = self.conversation.get_question_prompt(model="vicuna", context=self.context)
-            elif self.mode == "summarization":
-                prompt_post = self.conversation.get_summary_prompt(model="vicuna", context=self.context)
         else:
             assert self.mode=="answering"
-            chat_post = [["ASSISTANT", "give a detailed description of this satellite image."]]
+            chat_post = [["ASSISTANT", "Can you give a detailed description of this satellite image?"]]
             self.conversation.load_messages(chat_post)
             prompt_post = self.conversation.get_answer_prompt(model="blip2", context=self.context)
             
@@ -99,11 +95,32 @@ class SummarySet(Dataset):
         with open(chats_path, "rb") as file:
             self.chats = json.load(file)
             self.image_names = list(self.chats.keys())
+            
+        self.conversation = Conversation()
     
     def __len__(self):
         return len(self.image_names)
 
     def __getitem__(self, index):
         image_name = self.image_names[index]
-        return image_name, self.chats[image_name]
+        self.conversation.load_messages(self.chats[image_name])
+        prompt = self.conversation.get_summary_prompt(model="vicuna", context=100)
+        return image_name, prompt
     
+
+class CDSet(Dataset):
+    def __init__(self, path_dict_summaries):
+        with open(path_dict_summaries, "rb") as file:
+            self.summaries = json.load(file)
+            self.image_names = list(set(elem.split("_")[0] for elem in list(self.summaries.keys())))
+            
+        self.conversation = Conversation()
+    
+    def __len__(self):
+        return len(self.image_names)
+    
+    def __getitem__(self, index):
+        image_name = self.image_names[index]
+        description1, description2 = self.summaries[image_name+"_pre.pkl"], self.summaries[image_name+"_post.pkl"]
+        prompt = self.conversation.get_cd_prompt(description1, description2, model="vicuna")
+        return image_name, prompt

@@ -112,7 +112,7 @@ class Chatter:
         ############################# POST PROCESS #############################
         if task == "questioning":
             outputs = [output.split("ASSISTANT:")[-1].split("?")[0].strip()+"?" for output in outputs]
-        elif task == "summarization":
+        elif task == "summarization" or task == "change_captioning":
             outputs = [output.split("ASSISTANT:")[-1].strip() for output in outputs]
         
         return outputs

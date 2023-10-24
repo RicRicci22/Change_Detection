@@ -4,13 +4,14 @@ It can use full image or cropped image to generate the dialogue.
 '''
 
 from utils.chat import *
-from utils.dataset import ChatSet, SummarySet
+from utils.dataset import ChatSet, SummarySet, CDSet
 import os
 from tqdm import tqdm
 import torch
 from utils.dataset import custom_collate
 import pickle
 from transformers import GenerationConfig
+import json
 
 def chat_on_images(llms_params:dict, dataset_params:dict):
     '''
@@ -59,7 +60,7 @@ def chat_on_images(llms_params:dict, dataset_params:dict):
             dataset = ChatSet(dataset_params["dataset_path"], dataset_params["chats_path"], mode="answering")
             dataloader = torch.utils.data.DataLoader(dataset, batch_size=4, shuffle=False, collate_fn = custom_collate)
             # Loading the answerer model 
-            chat.load_answerer(llms_params["answerer_type"], llms_params["answerer_model"], llms_params["answerer_device"])
+            chat.load_lmm(llms_params["answerer_type"], llms_params["answerer_model"], llms_params["answerer_device"])
             print("Answering questions in batch")
             for batch in tqdm(dataloader):
                 img_names, imgs_pre, prompt_pre, chat_pre, imgs_post, prompt_post, chat_post = batch
@@ -85,7 +86,7 @@ def chat_on_images(llms_params:dict, dataset_params:dict):
             dataset = ChatSet(dataset_params["dataset_path"], dataset_params["chats_path"], mode="questioning")
             dataloader = torch.utils.data.DataLoader(dataset, batch_size=4, shuffle=False, collate_fn = custom_collate)
             # Loading the answerer model 
-            chat.load_questioner(llms_params["questioner_type"], llms_params["questioner_model"], llms_params["questioner_device"])
+            chat.load_llm(llms_params["questioner_type"], llms_params["questioner_model"], llms_params["questioner_device"])
             print("Asking questions in batch")
             ############# SET GENERATION CONFIG #####################################
             gen_cfg = GenerationConfig.from_pretrained(llms_params["questioner_model"])
@@ -133,18 +134,71 @@ def summarize_chats(llms_params:dict, path_dict_chats:str):
     assert llms_params["summarizer_type"] in ["vicuna"], "Summarizer not supported"
     # Sanity checks on dataset params
     assert os.path.exists(path_dict_chats), "dict_chats not found"
-    
+    chat = Chatter()
     dataset = SummarySet(path_dict_chats)
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=8, shuffle=False)
+    chat.load_llm(llms_params["summarizer_type"], llms_params["summarizer_model"], llms_params["summarizer_device"])
+    gen_cfg = GenerationConfig.from_pretrained(llms_params["summarizer_model"])
+    gen_cfg.max_new_tokens=200
+    gen_cfg.do_sample=True
+    gen_cfg.temperature=0.6
+    gen_cfg.top_p=0.95
+    gen_cfg.top_k=40
+    gen_cfg.repetition_penalty=1.1
+    
+    results = {}
     for batch in tqdm(dataloader):
-        img_names, chats = batch
-        print(img_names)
-        print(chats)
-        break
+        img_names, prompts = batch
+        out = chat.call_vicuna(prompts, gen_cfg, task="summarization")
+        for i in range(len(img_names)):
+            results[img_names[i]] = out[i]
     
+    # Save the dict of summaries
+    with open("summaries.json", "w") as file:
+        json.dump(results, file)
     
+    return
+
+def generate_cd(llms_params:dict, path_dict_summaries:str):
+    '''
+    Given some llms_params for generation and a dict of summaries in the form {img_name: summary}, it generates a dict of change captions.
+    Input:
+    llms_params: dict
+        The parameters for the LLM model.
+    path_dict_summaries: str
+        The path of the dictionary of summaries (dictionary should be in the form {img_name: summary})
+    Returns 
+    cds: dict
+        The dictionary of change captions in the form {img_name: change_caption}
+    '''
+    assert llms_params["changecaptioner_type"] in ["vicuna"], "Change captioner not supported"
+    # Sanity checks on dataset params
+    assert os.path.exists(path_dict_summaries), "dict of summaries not found"
+    chat = Chatter()
+    dataset = CDSet(path_dict_summaries)
+    dataloader = torch.utils.data.DataLoader(dataset, batch_size=8, shuffle=False)
+    chat.load_llm(llms_params["changecaptioner_type"], llms_params["changecaptioner_model"], llms_params["changecaptioner_device"])
+    gen_cfg = GenerationConfig.from_pretrained(llms_params["changecaptioner_model"])
+    gen_cfg.max_new_tokens=200
+    gen_cfg.do_sample=True
+    gen_cfg.temperature=0.6
+    gen_cfg.top_p=0.95
+    gen_cfg.top_k=40
+    gen_cfg.repetition_penalty=1.1
     
+    results = {}
+    for batch in tqdm(dataloader):
+        img_names, prompts = batch
+        out = chat.call_vicuna(prompts, gen_cfg, task="change_captioning")
+        for i in range(len(img_names)):
+            results[img_names[i]] = out[i]
+
+    # Save the dict of summaries
+    with open("cds.json", "w") as file:
+        json.dump(results, file)
     
+    return
+        
 if __name__ == "__main__":
     llms_params = {
         "answerer_type": "blip2",
@@ -156,6 +210,10 @@ if __name__ == "__main__":
         "questioner_device": "cuda:1",
         "summarizer_type": "vicuna",
         "summarizer_model": "TheBloke/vicuna-13B-v1.5-GPTQ",
+        "summarizer_device": "cuda:1",
+        "changecaptioner_type": "vicuna",
+        "changecaptioner_model": "TheBloke/vicuna-13B-v1.5-GPTQ",
+        "changecaptioner_device": "cuda:1",
     }
     
     dataset_params = {
@@ -166,6 +224,8 @@ if __name__ == "__main__":
         "use_labels": True, # If true, it can use the labels to crop the image in the area of the biggest change
     }
     
-    json_path = "out.json"
-    summarize_chats(llms_params, json_path)
-    
+    # chats_path = "out.json"
+    # summarize_chats(llms_params, chats_path)
+    summaries_path = "summaries.json"
+    generate_cd(llms_params, summaries_path)
+    print("Finished!")

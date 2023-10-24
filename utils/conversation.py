@@ -15,13 +15,13 @@ ANSWER_INSTRUCTION = (
 )
 
 SUMMARY_INSTRUCTION = (
-    "Analyze the chat between the user and the assistant. Create the shortest description of the image from it."
+    "Create the shortest and accurate description of the satellite image based only on the chat contents."
 )
 
 CHANGE_INSTRUCTION = (
-    "I will provide descriptions of two remote sensing images taken at the same location at different times. "
-    "You are a useful ASSISTANT, and you generate a summarized textual paragraph the changes occurred, if any, based solely on the two descriptions. "
-    "Don't add information. Don't miss information."
+    "A chat between a curious user and an artificial intelligence change detection assistant. "
+    "The user provides descriptions of two satellite images taken over the same location at different times. "
+    "The assistant generates a single textual paragraph describing the changes that occurred in the image, if any."
 )
 
 @dataclass
@@ -87,15 +87,17 @@ class Conversation:
         Each model should have its own generate prompt function
         '''
         if model == "vicuna":
-            return self.generate_prompt_vicuna(system = self.q_system, context = context, last_message=self.s_system)
+            return self.generate_summaryprompt_vicuna(system = self.s_system)
         else:
             raise ValueError(f"The model {model} is not recognized. Please use one of the following models: vicuna")
     
-    def get_change_description_prompt(self, model:str="vicuna", description1:str="", description2:str=""):
+    def get_cd_prompt(self, description1:str="", description2:str="", model:str="vicuna"):
         '''
         Function that return the prompt for generating a question for different models
         Each model should have its own generate prompt function
         '''
+        assert description1 != "" and description2 != "", "The descriptions cannot be empty!"
+        
         if model == "vicuna":
             return self.generate_cd_prompt_vicuna(system = self.cd_system, description1 = description1, description2 = description2)
         else:
@@ -139,6 +141,37 @@ class Conversation:
             if last_message.strip()[-1] != ".":
                 last_message += "."
             prompt += last_message + self.sep + self.roles[1] + ":"
+        else:
+            prompt += self.roles[1] + ":"
+        return prompt
+    
+    def generate_summaryprompt_vicuna(self, system:str):
+        '''
+        Prompt format 
+        "USER: Description. ASSISTANT: first question.</s>USER: first answer. ASSISTANT:second question.</s>USER: second answer. ... ASSISTANT:last question.</s>USER: last answer. <last_message> ASSISTANT:"
+        '''
+        # Remove the first message (describe this image in detail)
+        prompt=""
+        messages = self.messages[1:]
+        for message in messages:
+            role, message = message
+            # Check the message
+            if message != "":
+                if role == "USER":
+                    if message[-1] != ".":
+                        message += "."
+                        prompt += role + ": " + message + self.sep
+                else:
+                    if message[-1] != "?":
+                        message += "?"
+                    prompt += role + ": " + message + self.sep2
+                
+        # Append the last role and optional last message
+        # Check last message 
+        if system != "":
+            if system.strip()[-1] != ".":
+                system += "."
+            prompt += system + self.sep + self.roles[1] + ":"
         else:
             prompt += self.roles[1] + ":"
         return prompt
@@ -219,7 +252,7 @@ if __name__ == "__main__":
     conv_v1 = Conversation()
     chat = Chatter()
     # Simulate a conversation
-    question1 = "give a detailed description of this satellite image"
+    question1 = "Can you give a detailed description of this satellite image?"
     answer1 = "An image of a blue sky"
     question2 = "What is the color of the sky?"
     answer2 = "Blue"
@@ -233,7 +266,7 @@ if __name__ == "__main__":
     chat.load_llm("vicuna", "TheBloke/vicuna-13B-v1.5-GPTQ", "cuda:1")
     gen_cfg = GenerationConfig.from_pretrained("TheBloke/vicuna-13B-v1.5-GPTQ")
     gen_cfg.max_new_tokens=200
-    gen_cfg.do_sample=True
+    gen_cfg.do_sample=False
     gen_cfg.temperature=0.7
     gen_cfg.top_p=0.95
     gen_cfg.top_k=40
