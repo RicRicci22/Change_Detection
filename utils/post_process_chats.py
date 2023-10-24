@@ -85,6 +85,7 @@ def chats_postprocessing(path_in:str, path_out:str)-> None:
     '''
     This function handles the complete post-processing of the chats
     '''
+    print("################### Post-processing chats ###################")
     chats = read_chats(path_in)
     # Remove round with answer "no"
     chats = remove_answers(chats, answers_blacklist=["no", "don't know", "not sure"])
@@ -92,6 +93,7 @@ def chats_postprocessing(path_in:str, path_out:str)-> None:
     chats = remove_affirmative_questions(chats)
     # Save the dict
     save_dict(chats, path_out)
+    print("################### Finished chats post-processing ###################")
 
 # if __name__=="__main__":
 #     chats_postprocessing("chats_cache", "chats_postprocessed.json")

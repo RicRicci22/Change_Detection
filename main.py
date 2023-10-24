@@ -51,6 +51,7 @@ def chat_on_images(llms_params:dict, dataset_params:dict):
     
     ########## Initialize the chat ##########
     dialogue_steps = llms_params["dialogue_steps"]
+    dialogue_steps = 2
     #########################################
     with torch.no_grad():
         for i in range(dialogue_steps):
@@ -65,8 +66,8 @@ def chat_on_images(llms_params:dict, dataset_params:dict):
             print("Answering questions in batch")
             for batch in tqdm(dataloader):
                 img_names, imgs_pre, prompt_pre, chat_pre, imgs_post, prompt_post, chat_post = batch
-                print("answering")
-                print(prompt_pre)
+                # print("answering")
+                # print(prompt_pre)
                 out_pre = chat.call_blip2(imgs_pre, prompt_pre)
                 out_post = chat.call_blip2(imgs_post, prompt_post)
                 # Save the results in the chats_cache
@@ -80,7 +81,7 @@ def chat_on_images(llms_params:dict, dataset_params:dict):
                         pickle.dump(chat_post[img_names[i]], file)
                         
                 break
-            del chat.answerer
+            del chat.multimodal_model
             torch.cuda.empty_cache()
             # QUESTIONING 
             print("Creating the dataset in questioning mode")
@@ -100,8 +101,8 @@ def chat_on_images(llms_params:dict, dataset_params:dict):
             #########################################################################
             for batch in tqdm(dataloader):
                 img_names, imgs_pre, prompt_pre, chat_pre, imgs_post, prompt_post, chat_post = batch
-                print("questioning")
-                print(prompt_pre)
+                # print("questioning")
+                # print(prompt_pre)
                 out_pre = chat.call_vicuna(prompt_pre, gen_cfg)
                 out_post = chat.call_vicuna(prompt_post, gen_cfg)
                 # Save the results in the chats_cache
@@ -116,7 +117,7 @@ def chat_on_images(llms_params:dict, dataset_params:dict):
                 
                 break
             
-            del chat.questioner
+            del chat.language_model # Maybe the line below is sufficient, to verify
             del chat
             torch.cuda.empty_cache()
 
@@ -224,10 +225,16 @@ if __name__ == "__main__":
         "area_threshold" : 5,
         "use_labels": True, # If true, it can use the labels to crop the image in the area of the biggest change
     }
+    print("################### Starting chatting ###################")
     chat_on_images(llms_params, dataset_params)
+    print("################### Finished chatting ###################")
     chats_postprocessing("chats_cache", "chats_postprocessed.json")
     chats_path = "chats_postprocessed.json"
+    print("################### Starting summarizing ###################")
     summarize_chats(llms_params, chats_path)
+    print("################### Finished summarizing ###################")
     summaries_path = "summaries.json"
+    print("################### Starting generating change description ###################")
     generate_cd(llms_params, summaries_path)
-    print("Finished!")
+    print("################### Finished generating change description ###################")
+    print("Entire process finished!")
