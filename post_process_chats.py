@@ -109,7 +109,7 @@ if __name__=="__main__":
     dict_out = remove_no_answers(out)
     dict_out = remove_answers_ending_with_point(dict_out)
     dict_out = discard_dont_know(dict_out)
-    path = "out.json"
+    path = "chats.json"
     save_dict(dict_out, path)
     
     

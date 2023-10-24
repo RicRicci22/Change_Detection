@@ -224,7 +224,7 @@ if __name__ == "__main__":
         "use_labels": True, # If true, it can use the labels to crop the image in the area of the biggest change
     }
     
-    # chats_path = "out.json"
+    # chats_path = "chats.json"
     # summarize_chats(llms_params, chats_path)
     summaries_path = "summaries.json"
     generate_cd(llms_params, summaries_path)
