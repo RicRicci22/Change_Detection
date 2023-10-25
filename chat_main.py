@@ -51,7 +51,6 @@ def chat_on_images(llms_params:dict, dataset_params:dict):
     
     ########## Initialize the chat ##########
     dialogue_steps = llms_params["dialogue_steps"]
-    dialogue_steps = 2
     #########################################
     with torch.no_grad():
         for i in range(dialogue_steps):
@@ -80,7 +79,6 @@ def chat_on_images(llms_params:dict, dataset_params:dict):
                     with open(os.path.join(dataset_params["chats_path"], img_names[i].split(".")[0]+"_post.pkl"), "wb") as file:
                         pickle.dump(chat_post[img_names[i]], file)
                         
-                break
             del chat.multimodal_model
             torch.cuda.empty_cache()
             # QUESTIONING 
@@ -114,8 +112,6 @@ def chat_on_images(llms_params:dict, dataset_params:dict):
                         pickle.dump(chat_pre[img_names[i]], file)
                     with open(os.path.join(dataset_params["chats_path"], img_names[i].split(".")[0]+"_post.pkl"), "wb") as file:
                         pickle.dump(chat_post[img_names[i]], file)
-                
-                break
             
             del chat.language_model # Maybe the line below is sufficient, to verify
             del chat
@@ -138,7 +134,7 @@ def summarize_chats(llms_params:dict, path_dict_chats:str):
     assert os.path.exists(path_dict_chats), "dict_chats not found"
     chat = Chatter()
     dataset = SummarySet(path_dict_chats)
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size=8, shuffle=False)
+    dataloader = torch.utils.data.DataLoader(dataset, batch_size=4, shuffle=False)
     chat.load_llm(llms_params["summarizer_type"], llms_params["summarizer_model"], llms_params["summarizer_device"])
     gen_cfg = GenerationConfig.from_pretrained(llms_params["summarizer_model"])
     gen_cfg.max_new_tokens=200
@@ -178,7 +174,7 @@ def generate_cd(llms_params:dict, path_dict_summaries:str):
     assert os.path.exists(path_dict_summaries), "dict of summaries not found"
     chat = Chatter()
     dataset = CDSet(path_dict_summaries)
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size=8, shuffle=False)
+    dataloader = torch.utils.data.DataLoader(dataset, batch_size=4, shuffle=False)
     chat.load_llm(llms_params["changecaptioner_type"], llms_params["changecaptioner_model"], llms_params["changecaptioner_device"])
     gen_cfg = GenerationConfig.from_pretrained(llms_params["changecaptioner_model"])
     gen_cfg.max_new_tokens=200
@@ -196,7 +192,7 @@ def generate_cd(llms_params:dict, path_dict_summaries:str):
             results[img_names[i]] = out[i]
 
     # Save the dict of summaries
-    with open("cds.json", "w") as file:
+    with open("results_chat/cds.json", "w") as file:
         json.dump(results, file, indent=4)
     
     return
@@ -225,15 +221,16 @@ if __name__ == "__main__":
         "area_threshold" : 5,
         "use_labels": True, # If true, it can use the labels to crop the image in the area of the biggest change
     }
+    
+    chats_postprocessed_path = "results_chat/chats_postprocessed.json"
+    summaries_path = "results_chat/summaries.json"
     print("################### Starting chatting ###################")
     chat_on_images(llms_params, dataset_params)
     print("################### Finished chatting ###################")
-    chats_postprocessing("chats_cache", "chats_postprocessed.json")
-    chats_path = "chats_postprocessed.json"
+    chats_postprocessing("chats_cache", chats_postprocessed_path)
     print("################### Starting summarizing ###################")
-    summarize_chats(llms_params, chats_path)
+    summarize_chats(llms_params, chats_postprocessed_path)
     print("################### Finished summarizing ###################")
-    summaries_path = "summaries.json"
     print("################### Starting generating change description ###################")
     generate_cd(llms_params, summaries_path)
     print("################### Finished generating change description ###################")

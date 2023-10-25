@@ -164,3 +164,4 @@ cython_debug/
 /results
 /chats_cache
 nohup.out
+/results_chat
