@@ -1,10 +1,13 @@
-from torch.utils.data import Dataset
-import os 
-from typing import Any
-from PIL import Image
-from utils.conversation import Conversation
 import pickle
 import json
+import os 
+from typing import Any
+
+from PIL import Image
+
+from torch.utils.data import Dataset
+from utils.conversation import Conversation
+#from LLaVA.llava.mm_utils import process_images
 
 def custom_collate(original_batch):
     '''
@@ -121,6 +124,41 @@ class CDSet(Dataset):
     
     def __getitem__(self, index):
         image_name = self.image_names[index]
-        description1, description2 = self.summaries[image_name+"_pre.pkl"], self.summaries[image_name+"_post.pkl"]
+        description1, description2 = self.summaries[image_name+"_pre.png"], self.summaries[image_name+"_post.png"]
         prompt = self.conversation.get_cd_prompt(description1, description2, model="vicuna")
         return image_name, prompt
+
+class LlavaDataset(Dataset):
+    def __init__(self, path_images, image_processor):
+        # Get the path of the images pre change
+        self.im_pre_path = os.path.join(path_images, "im1")
+        # Get the path of the images post change
+        self.im_post_path = os.path.join(path_images, "im2")
+        # Create an unique list of images
+        ext = os.listdir(self.im_pre_path)[0].split(".")[-1]
+        self.images = dict()
+        for image_name in os.listdir(self.im_pre_path):
+            image_name_modified = image_name.split(".")[0]+"_pre."+ext
+            self.images[image_name_modified] = os.path.join(self.im_pre_path, image_name)
+        
+        for image_name in os.listdir(self.im_post_path):
+            image_name_modified = image_name.split(".")[0]+"_post."+ext
+            self.images[image_name_modified] = os.path.join(self.im_post_path, image_name)
+        
+        self.keys = list(self.images.keys())
+        
+        self.image_processor = image_processor
+        
+    def __len__(self):
+        return len(self.images)
+    
+    def __getitem__(self, index):
+        # Get the image
+        image_name = self.keys[index]
+        image_path = self.images[image_name]
+        image = Image.open(image_path).convert('RGB')
+        model_cfg = dict()
+        model_cfg["image_aspect_ratio"] = "pad"
+        image_tensor = process_images([image], self.image_processor, model_cfg=model_cfg)
+        
+        return image_name, image_tensor

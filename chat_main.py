@@ -3,7 +3,7 @@ This piece of code is inteded to be used to generate a dialogue between the ques
 It can use full image or cropped image to generate the dialogue.
 '''
 
-from utils.chat import *
+from utils.chat import Chatter
 from utils.dataset import ChatSet, SummarySet, CDSet
 import os
 from tqdm import tqdm
@@ -59,7 +59,7 @@ def chat_on_images(llms_params:dict, dataset_params:dict):
             # ANSWERING 
             print("Creating the dataset in answering mode")
             dataset = ChatSet(dataset_params["dataset_path"], dataset_params["chats_path"], mode="answering")
-            dataloader = torch.utils.data.DataLoader(dataset, batch_size=4, shuffle=False, collate_fn = custom_collate)
+            dataloader = torch.utils.data.DataLoader(dataset, batch_size=4, shuffle=False, collate_fn = custom_collate, num_workers=12, pin_memory=True)
             # Loading the answerer model 
             chat.load_lmm(llms_params["answerer_type"], llms_params["answerer_model"], llms_params["answerer_device"])
             print("Answering questions in batch")
@@ -84,7 +84,7 @@ def chat_on_images(llms_params:dict, dataset_params:dict):
             # QUESTIONING 
             print("Creating the dataset in questioning mode")
             dataset = ChatSet(dataset_params["dataset_path"], dataset_params["chats_path"], mode="questioning")
-            dataloader = torch.utils.data.DataLoader(dataset, batch_size=4, shuffle=False, collate_fn = custom_collate)
+            dataloader = torch.utils.data.DataLoader(dataset, batch_size=4, shuffle=False, collate_fn = custom_collate, num_workers=12, pin_memory=True)
             # Loading the answerer model 
             chat.load_llm(llms_params["questioner_type"], llms_params["questioner_model"], llms_params["questioner_device"])
             print("Asking questions in batch")
@@ -194,8 +194,7 @@ def generate_cd(llms_params:dict, path_dict_summaries:str):
     # Save the dict of summaries
     with open("results_chat/cds.json", "w") as file:
         json.dump(results, file, indent=4)
-    
-    return
+        
         
 if __name__ == "__main__":
     llms_params = {
@@ -223,14 +222,15 @@ if __name__ == "__main__":
     }
     
     chats_postprocessed_path = "results_chat/chats_postprocessed.json"
-    summaries_path = "results_chat/summaries.json"
-    print("################### Starting chatting ###################")
-    chat_on_images(llms_params, dataset_params)
-    print("################### Finished chatting ###################")
-    chats_postprocessing("chats_cache", chats_postprocessed_path)
-    print("################### Starting summarizing ###################")
-    summarize_chats(llms_params, chats_postprocessed_path)
-    print("################### Finished summarizing ###################")
+    #summaries_path = "results_chat/summaries.json"
+    # print("################### Starting chatting ###################")
+    # chat_on_images(llms_params, dataset_params)
+    # print("################### Finished chatting ###################")
+    # chats_postprocessing("chats_cache", chats_postprocessed_path)
+    # print("################### Starting summarizing ###################")
+    # summarize_chats(llms_params, chats_postprocessed_path)
+    # print("################### Finished summarizing ###################")
+    summaries_path = "results_llava/results_indirect.json"
     print("################### Starting generating change description ###################")
     generate_cd(llms_params, summaries_path)
     print("################### Finished generating change description ###################")

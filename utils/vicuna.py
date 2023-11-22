@@ -1,6 +1,4 @@
 from transformers import AutoModelForCausalLM, AutoTokenizer
-import torch
-from typing import Iterable
 
 
 def load_hug_model(model, device):
