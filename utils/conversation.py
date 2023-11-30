@@ -18,10 +18,17 @@ SUMMARY_INSTRUCTION = (
     "Create the shortest and accurate description of the satellite image based only on the chat contents."
 )
 
+# CHANGE_INSTRUCTION = (
+#     "A chat between a curious user and an artificial intelligence assistant. " 
+#     "The user provides descriptions of two satellite images taken over the same location at different times. "
+#     "The assistant analyzes the two descriptions and deduct the changes happened in the images relying only on the text, if any."
+#     "If there are no meaningful differences between the two descriptions, the assistant should say that there are no changes."
+# )
+
 CHANGE_INSTRUCTION = (
-    "A chat between a curious user and an artificial intelligence change detection assistant. "
-    "The user provides descriptions of two satellite images taken over the same location at different times. "
-    "The assistant generates a single textual paragraph describing the changes that occurred in the image, if any."
+    "A chat between a curious user and an artificial intelligence assistant. " 
+    "The assistant gives helpful, detailed, and polite answers to the user's questions. "
+    "I have two descriptions of two satellite images. Summarize in a text the main changes occurred. Do not describe what is in each image but just changes. If there are no significant changes, say that there are no changes."
 )
 
 @dataclass

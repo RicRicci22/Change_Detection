@@ -94,7 +94,4 @@ def chats_postprocessing(path_in:str, path_out:str)-> None:
     # Save the dict
     save_dict(chats, path_out)
     print("################### Finished chats post-processing ###################")
-
-# if __name__=="__main__":
-#     chats_postprocessing("chats_cache", "chats_postprocessed.json")
     

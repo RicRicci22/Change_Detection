@@ -8,11 +8,11 @@ import torch
 import json
 from tqdm import tqdm
 
-from LLaVA.llava.model.builder import load_pretrained_model
-from LLaVA.llava.utils import disable_torch_init
-from LLaVA.llava.mm_utils import get_model_name_from_path, tokenizer_image_token, tokenizer_image_token, KeywordsStoppingCriteria
-from LLaVA.llava.constants import DEFAULT_IMAGE_TOKEN, IMAGE_TOKEN_INDEX
-from LLaVA.llava.conversation import conv_templates
+# from LLaVA.llava.model.builder import load_pretrained_model
+# from LLaVA.llava.utils import disable_torch_init
+# from LLaVA.llava.mm_utils import get_model_name_from_path, tokenizer_image_token, tokenizer_image_token, KeywordsStoppingCriteria
+# from LLaVA.llava.constants import DEFAULT_IMAGE_TOKEN, IMAGE_TOKEN_INDEX
+# from LLaVA.llava.conversation import conv_templates
 from utils.dataset import LlavaDataset
 from utils.chat import Chatter
 from utils.dataset import CDSet
@@ -109,7 +109,7 @@ def main_llava(llms_params:dict, dataset_params:dict, mode="direct"):
                 results[img_names[i]] = out[i]
 
         # Save the dict of summaries
-        with open("results_chat/cds.json", "w") as file:
+        with open("results_llava/cds.json", "w") as file:
             json.dump(results, file, indent=4)
         
 

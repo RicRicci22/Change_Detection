@@ -7,7 +7,6 @@ from PIL import Image
 
 from torch.utils.data import Dataset
 from utils.conversation import Conversation
-#from LLaVA.llava.mm_utils import process_images
 
 def custom_collate(original_batch):
     '''
@@ -22,6 +21,34 @@ def custom_collate(original_batch):
     chat_post = {item[0]:item[6] for item in original_batch}
 
     return img_names, imgs_pre, prompt_pre, chat_pre, imgs_post, prompt_post, chat_post
+
+class MultitemporalImageSet(Dataset):
+    '''
+    This dataset return couples of multitemporal images given an index
+    '''
+    def __init__(self, images_path):
+        super(MultitemporalImageSet, self).__init__()
+        # images_path : str -> path of the folder containing all the images
+        self.images_path = images_path
+        # Get the path of the images pre change
+        self.im_pre_path = os.path.join(images_path, "im1")
+        # Get the path of the images post change
+        self.im_post_path = os.path.join(images_path, "im2")
+        self.images_names = os.listdir(self.im_pre_path)
+        
+    def __len__(self):
+        return len(self.images_names)
+    
+    def __getitem__(self, index: int) -> Any:
+        # Read the two images and return PIL objects 
+        image_name = self.images_names[index]
+        im_pre_path = os.path.join(self.im_pre_path, image_name)
+        im_post_path = os.path.join(self.im_post_path, image_name)
+        image_1 = Image.open(im_pre_path)
+        image_2 = Image.open(im_post_path)
+        
+        return image_name, image_1, image_2
+        
 
 class ChatSet(Dataset):
     '''
@@ -127,7 +154,45 @@ class CDSet(Dataset):
         description1, description2 = self.summaries[image_name+"_pre.png"], self.summaries[image_name+"_post.png"]
         prompt = self.conversation.get_cd_prompt(description1, description2, model="vicuna")
         return image_name, prompt
+    
+class EvaluationDataset(Dataset):
+    '''
+    Dataset to handle evaluation of the model using reasoning capabilities of a LLM.
+    Inputs:
+        - path_cds: str -> path to the json file cotaining the change descriptions.
+        
+    '''
+    def __init__(self, path_cds):
+        with open(path_cds, "r") as file:
+            self.cds = json.load(file)
+            # Find all the possible changes between two classes
+            self.changes = list()
+            classes = ['water', 'ground', 'low vegetation', 'tree', 'building', 'sports field']
+            for i in range(len(classes)):
+                for j in range(len(classes)):
+                    if i != j:
+                        self.changes.append("a " + classes[i]+" area has transformed into a "+classes[j]+" area.")
+        
+        self.prompt_template = "A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions.\nUSER: Paragraph describing changes between two satellite images: \"<paragraph>\". From this paragraph, can you easily deduce that <fact>? Answer concisely.\nASSISTANT:"
+        samples = list()
+        
+        for image, change_desc in self.cds.items():
+            for change in self.changes:
+                samples.append((image, change_desc, change))
+        
+        self.samples = samples
+        
+    def __len__(self):
+        return len(self.samples)
 
+    def __getitem__(self, index):
+        image, change_desc, change = self.samples[index]
+        for _ in range(len(change_desc)):
+            prompt = self.prompt_template.replace("<fact>", change[:-1])
+            prompt = prompt.replace("<paragraph>", change_desc[:-1])
+
+        return image, prompt, change
+    
 class LlavaDataset(Dataset):
     def __init__(self, path_images, image_processor):
         # Get the path of the images pre change
