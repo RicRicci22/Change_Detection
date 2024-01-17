@@ -1,42 +1,45 @@
 from dataclasses import dataclass, field
 from typing import List
-from utils.chat import Chatter
-from transformers import GenerationConfig
+import os
+import pickle
 
-QUESTION_INSTRUCTION = (
+SYSTEM = (
     "A chat between a curious user and an artificial intelligence assistant. " 
-    "The assistant asks meaningful, detailed, accurate questions to the user based on the context given by the initial description provided by the user and the next questions and answers. "
-    "The questions serves to explore further the satellite image contents. "
-    "No questions should be posed about specific names of the places in the image, since it is difficult to know them just by looking at the image."
+    "The assistant gives helpful, detailed, and polite answers to the user's questions.\n"
 )
+
+FIRST_USER_MESSAGE = (
+    "I am interested in knowing which changes happened between two satellite images of the same area area acquired at different times. "
+    "I can look at the two images and answer your questions one by one. "
+    "You must produce questions focused on structural changes in the area layout. It must be possible to answer the questions just by looking at the rgb images. "
+    "After each answer, you should stop asking more questions if you think there is sufficient information. In the case you want to stop, you can answer with the word \"stop\"."
+)
+
+NEXT_USER_MESSAGE = (
+    ""
+)
+
 
 ANSWER_INSTRUCTION = (
     "Answer the question. If you are unsure on the answer, say you don't know."
 )
 
 SUMMARY_INSTRUCTION = (
-    "Create the shortest and accurate description of the satellite image based only on the chat contents."
+    "This dialogue is about possible changes between two satellite images. Summarize it creating a descriptive paragraph of the changes happened. The paragraph should not mention that the information is taken from the dialogue, it must be just a description of the changes as it would be by looking at the images."
 )
-
-# CHANGE_INSTRUCTION = (
-#     "A chat between a curious user and an artificial intelligence assistant. " 
-#     "The user provides descriptions of two satellite images taken over the same location at different times. "
-#     "The assistant analyzes the two descriptions and deduct the changes happened in the images relying only on the text, if any."
-#     "If there are no meaningful differences between the two descriptions, the assistant should say that there are no changes."
-# )
 
 CHANGE_INSTRUCTION = (
     "A chat between a curious user and an artificial intelligence assistant. " 
-    "The assistant gives helpful, detailed, and polite answers to the user's questions. "
-    "I have two descriptions of two satellite images. Summarize in a text the main changes occurred. Do not describe what is in each image but just changes. If there are no significant changes, say that there are no changes."
+    "The assistant gives helpful, detailed, and polite answers to the user's questions.\n"
+    "USER: I have two descriptions of two satellite images. Based on the two descriptions, create a paragraph summarizing the main changes that you deduce. Do not describe what is in each image but just changes. If there are no significant changes, just say that."
 )
 
 @dataclass
 class Conversation:
     """A class that keeps all conversation history."""
-    q_system: str = QUESTION_INSTRUCTION
+    system: str = SYSTEM
     a_system: str = ANSWER_INSTRUCTION
-    s_system: str = SUMMARY_INSTRUCTION
+    summary_instruction: str = SUMMARY_INSTRUCTION
     cd_system: str = CHANGE_INSTRUCTION
     roles: tuple[str] = ("USER", "ASSISTANT")
     messages: List[List[str]] = field(default_factory=list)
@@ -54,30 +57,20 @@ class Conversation:
         Function that loads a list of messages into the conversation
         '''
         # Check if the messages are in the correct format 
-        role = "USER" # The first question is always from the USER!
+        role = "ASSISTANT"
         for message in messages:
             if len(message) != 2:
-                raise ValueError("The messages must be a list of lists, where each list has two elements: role and message")
+                raise ValueError("The messages must be a list of tuples, where each tuple has two elements: role and message")
             if message[0] not in self.roles:
                 raise ValueError(f"The role {message[0]} is not recognized. Please use one of the following roles: {self.roles}")
             if role == message[0]:
                 # Wrong 
-                raise ValueError("The messages should alternate between the two roles, and the first must come from the ASSISTANT!") # The first message is the user describing the image
+                raise ValueError("The messages should alternate between the two roles, and the first must come from the USER!")
             
             role = message[0]
-        # Set the messages
+        # Checks passed, set the messages
         self.messages = messages
         
-    def get_question_prompt(self, model:str="vicuna", context:int=100):
-        '''
-        Function that return the prompt for generating a question for different models
-        Each model should have its own generate prompt function
-        '''
-        if model == "vicuna":
-            return self.generate_prompt_vicuna(system = self.q_system, context = context)
-        else:
-            raise ValueError(f"The model {model} is not recognized. Please use one of the following models: vicuna")
-    
     def get_answer_prompt(self, model:str="blip2", context:int=100):
         '''
         Function that return the prompt for generating a question for different models
@@ -85,6 +78,8 @@ class Conversation:
         '''
         if model == "blip2":
             return self.generate_prompt_blip2(system = self.a_system, context = context)
+        elif model=="otter":
+            return self.generate_prompt_otter(context = context)
         else:
             raise ValueError(f"The model {model} is not recognized. Please use one of the following models: blip2")
         
@@ -103,101 +98,117 @@ class Conversation:
         Function that return the prompt for generating a question for different models
         Each model should have its own generate prompt function
         '''
-        assert description1 != "" and description2 != "", "The descriptions cannot be empty!"
+        #assert description1 != "" and description2 != "", "The descriptions cannot be empty!"
         
         if model == "vicuna":
             return self.generate_cd_prompt_vicuna(system = self.cd_system, description1 = description1, description2 = description2)
         else:
             raise ValueError(f"The model {model} is not recognized. Please use one of the following models: vicuna")
+        
+    def generate_first_conversations(self, image_path:str, user_intention:str="", chat_cache = "chats_cache"):
+        '''
+        Function that generates a first conversation for each image
+        '''
+        for image_name in os.listdir(image_path+"/im1"):
+            if user_intention!="":
+                user_message = FIRST_USER_MESSAGE + " " + user_intention
+            else:
+                user_message = FIRST_USER_MESSAGE
+                
+            messages=[["USER", user_message]]
+                
+            # Save it in a pkl file 
+            with open(os.path.join(chat_cache, image_name.split(".")[0]+".pkl"), "wb") as file:
+                pickle.dump(messages, file)
     
-    def generate_prompt_vicuna(self, system:str, last_message:str="", context:int=100):
+    def generate_prompt_vicuna(self, last_message:str="", init_assistant:str="", context:int=100):
         '''
-        Prompt format 
-        "<system>. USER: Description. ASSISTANT: First question.</s>USER: First answer. ASSISTANT:"
+        General prompt format 
+        "<system>. USER: First message. ASSISTANT: First response.</s>USER: Second message. <optional last_message>. ASSISTANT: <optional init_assistant> second response "
+        Questioning prompt format 
+        "<system>. USER: First message. ASSISTANT: First question: generated first question.</s>USER: First answer. Next question ASSISTANT: Next question: generated next question"
+        Input: 
+        last_message: A message to append to the end of the conversation, right before "ASSISTANT:"
+        init_assistant: the beginning of the answer for the assistant, to better direct in the right answer. 
         '''
-        # Limit the messages by context
-        # Remove the first message (describe this image in detail)
-        self.messages = self.messages[1:]
-        # Go on
-        if len(self.messages) > context:
-            messages = self.messages[-context:]
+        prompt = self.system
+        messages = self.messages
+        
+        if len(messages) == 1:
+            init_assistant="First question:"
         else:
-            messages = self.messages
-        
-        if system[-1] != ".":
-            system += "."
-        
-        prompt = system + self.sep
-        
+            # Limit the messages by context
+            if len(messages) > context:
+                messages = messages[-context:]
+                
+            last_message=NEXT_USER_MESSAGE
+            init_assistant="Next question:"
+            
         for message in messages:
             role, message = message
+            message = message.strip()
             # Check the message
             if message != "":
                 if role == "USER":
-                    if message[-1] != ".":
+                    if message[-1]!=".":
                         message += "."
-                        prompt += role + ": " + message + self.sep
+                    prompt += role + ": " + message + self.sep
                 else:
-                    if message[-1] != "?":
-                        message += "?"
                     prompt += role + ": " + message + self.sep2
-                
+        
         # Append the last role and optional last message
         # Check last message 
         if last_message != "":
-            if last_message.strip()[-1] != ".":
-                last_message += "."
-            prompt += last_message + self.sep + self.roles[1] + ":"
-        else:
-            prompt += self.roles[1] + ":"
+            last_message = last_message.strip()
+            if last_message[-1] != ".":
+                last_message = last_message[:-1]+"."
+            prompt += last_message + self.sep
+        
+        prompt += self.roles[1] + ": " + init_assistant
         return prompt
     
-    def generate_summaryprompt_vicuna(self, system:str):
+    def generate_summary_prompt_vicuna(self):
         '''
         Prompt format 
         "USER: Description. ASSISTANT: first question.</s>USER: first answer. ASSISTANT:second question.</s>USER: second answer. ... ASSISTANT:last question.</s>USER: last answer. <last_message> ASSISTANT:"
         '''
-        # Remove the first message (describe this image in detail)
+        # Remove the first message (instructions from the user)
         prompt=""
-        messages = self.messages[1:]
-        for message in messages:
-            role, message = message
-            # Check the message
-            if message != "":
-                if role == "USER":
-                    if message[-1] != ".":
-                        message += "."
-                        prompt += role + ": " + message + self.sep
-                else:
-                    if message[-1] != "?":
-                        message += "?"
-                    prompt += role + ": " + message + self.sep2
-                
-        # Append the last role and optional last message
-        # Check last message 
-        if system != "":
-            if system.strip()[-1] != ".":
-                system += "."
-            prompt += system + self.sep + self.roles[1] + ":"
+        prompt += self.system
+        if self.messages[0][0]=="USER":
+            messages = self.messages[1:]
         else:
-            prompt += self.roles[1] + ":"
+            messages = self.messages
+        assert messages[0][0]=="ASSISTANT", "The first message must be from the assistant! (question)"
+        if len(messages) % 2 != 0:
+            # Discard the last message
+            messages = messages[:-1]
+            
+        interactions = list()
+        for i in range(0,len(messages),2):
+            assistant = messages[i]
+            user = messages[i+1]
+            if assistant[1]=="" or user[1]=="":
+                continue
+            interactions.append((assistant,user))
+        
+        # Change the order of user and assistant to help the model
+        for interaction in interactions:
+            prompt += "USER: " + interaction[0][1] + self.sep + "ASSISTANT: " + interaction[1][1] + self.sep2
+        
+        prompt += self.roles[0] + ": " + self.summary_instruction + self.sep + "ASSISTANT:"
+            
         return prompt
     
     def generate_cd_prompt_vicuna(self, system:str, description1:str="", description2:str=""):
         '''
         Prompt format
         "<system> Description 1: <description1> Description 2: <description2> Changes:"
-        '''
-        # Check the descriptions
-        if description1[-1] != ".":
-            description1 += "."
-        if description2[-1] != ".":
-            description2 += "."
-            
+        ''' 
         prompt = system + self.sep
         prompt += "Description 1: " + description1 + self.sep
         prompt += "Description 2: " + description2 + self.sep
-        prompt += self.roles[1] + ":"
+        prompt += self.roles[1] + ": Changes:"
         
         return prompt
     
@@ -238,6 +249,18 @@ class Conversation:
         prompt += "Answer:"
         return prompt
     
+    def generate_prompt_otter(self, context:int=100):
+        '''
+        Prompt format 
+        <image><image> User: <question> GPT:<answer>
+        '''
+        assert context == 1, "The context must be 1 for otter!"
+        assert self.messages[-1][0]=="ASSISTANT", "The last message must be from the assistant!"
+        
+        prompt = "<image>User: "+self.messages[-1][1]+" GPT:<answer>"
+        return prompt        
+        
+     
     def return_messages(self):
         """
         Returns two lists, one for the questions and the other for the answers
@@ -257,7 +280,7 @@ class Conversation:
 
 if __name__ == "__main__":
     conv_v1 = Conversation()
-    chat = Chatter()
+    #chat = Chatter()
     # Simulate a conversation
     question1 = "Can you give a detailed description of this satellite image?"
     answer1 = "An image of a blue sky"
@@ -265,19 +288,19 @@ if __name__ == "__main__":
     answer2 = "Blue"
     question3 = "What is the color of the sea?"
     answer3 = "Black"
-    messages = [["ASSISTANT", question1], ["USER", answer1], ["ASSISTANT", question2], ["USER", answer2], ["ASSISTANT", question3],["USER", answer3]]
-    #messages = [["ASSISTANT", question1], ["USER", answer1]]
+    messages = [["USER", FIRST_USER_MESSAGE], ["ASSISTANT", question1], ["USER",answer1], ["ASSISTANT", question2], ["USER", answer2], ["ASSISTANT", question3], ["USER", answer3]]
     conv_v1.load_messages(messages)
     # Get the prompt for the next question
-    prompt = conv_v1.get_summary_prompt(context=100)
-    chat.load_llm("vicuna", "TheBloke/vicuna-13B-v1.5-GPTQ", "cuda:1")
-    gen_cfg = GenerationConfig.from_pretrained("TheBloke/vicuna-13B-v1.5-GPTQ")
-    gen_cfg.max_new_tokens=200
-    gen_cfg.do_sample=False
-    gen_cfg.temperature=0.7
-    gen_cfg.top_p=0.95
-    gen_cfg.top_k=40
-    gen_cfg.repetition_penalty=1.1
-    out = chat.call_vicuna(prompt, gen_cfg, task="summarization")
-    print(prompt+"\n\n")
-    print(out)
+    prompt = conv_v1.generate_summary_prompt_vicuna()
+    print(prompt)
+    # chat.load_llm("vicuna", "TheBloke/vicuna-13B-v1.5-GPTQ", "cuda:1")
+    # gen_cfg = GenerationConfig.from_pretrained("TheBloke/vicuna-13B-v1.5-GPTQ")
+    # gen_cfg.max_new_tokens=200
+    # gen_cfg.do_sample=False
+    # gen_cfg.temperature=0.7
+    # gen_cfg.top_p=0.95
+    # gen_cfg.top_k=40
+    # gen_cfg.repetition_penalty=1.1
+    # out = chat.call_vicuna(prompt, gen_cfg, task="summarization")
+    # print(prompt+"\n\n")
+    # print(out)

@@ -1,27 +1,8 @@
-from .blip2 import Blip2
-from .vicuna import load_hug_model
 import torch
+from utils.utils import load_mistral, load_openassistant, load_hug_model, load_vicuna, load_blip2, load_otter
 
-FIRST_QUESTION = "Describe this remote sensed image in detail."
-LLM_MODELS = ["chatgpt", "vicuna"]
-LMM_MODELS = ["blip2"]
-
-def load_vicuna(model_name, device: str="cpu"):
-    '''
-    Load vicuna calling the load_hug_model function, which is a general function to load models from huggingface
-    '''
-    tokenizer, model = load_hug_model(model_name, device)
-
-    return model, tokenizer
-
-
-def load_blip2(model_name, device: str="cpu"):
-    '''
-    Load blip by custom Blip 2 class, TODO transform using the general function load_hug_model
-    '''
-    model = Blip2(model_name, device=device, bit4=True)
-
-    return model
+LLM_MODELS = ["chatgpt", "vicuna", "mistral", "openassistant"]
+LMM_MODELS = ["blip2", "otter"]
 
 def load_language_model(model_type: str, model_name:str, device: str="cpu"):
     '''
@@ -32,6 +13,10 @@ def load_language_model(model_type: str, model_name:str, device: str="cpu"):
             raise NotImplementedError("chatgpt is not implemented yet")
         elif model_type == "vicuna":
             model, tokenizer = load_vicuna(model_name, device)
+        elif model_type == "mistral":
+            model, tokenizer = load_mistral(model_name, device)
+        elif model_type == "openassistant":
+            model, tokenizer = load_openassistant(model_name, device)
     else:
         raise ValueError("{} is not a valid question model".format(model_name))
 
@@ -45,6 +30,8 @@ def load_multimodal_model(model_type: str, model_name:str, device: str="cpu"):
     if model_type in LMM_MODELS:
         if model_type == "blip2":
             model = load_blip2(model_name, device)
+        if model_type == "otter":
+            model = load_otter(model_name, device)
     else:
         raise ValueError("{} is not a valid question model".format(model_name))
 
@@ -59,19 +46,6 @@ class Chatter:
         self
     ):
         pass
-        # if params is None:
-        #     raise ValueError("No parameters given")
-        # else:
-        #     # Extract the info from the params
-        #     questioner_type = params["questioner_type"] # Options: vicuna
-        #     questioner_model = params["questioner_model"] # Options: TheBloke/vicuna-13B-v1.5-GPTQ, lmsys/vicuna-7b-v1.5, lmsys/vicuna-13b-v1.5
-        #     questioner_device = params["questioner_device"] # Options: cuda:0, cuda:1, cpu
-        #     self.questioner_context = params["questioner_context"] 
-        #     # ANSWERER
-        #     answerer_type = params["answerer_type"] # Options: blip2
-        #     answerer_model = params["answerer_model"] # Options: flant5xxl
-        #     answerer_device = params["answerer_device"] # Options: cuda:0, cuda:1, cpu 
-        #     self.answerer_context = params["answerer_context"]
 
     def load_llm(self, llm_type, llm_model, device):
         '''
@@ -82,6 +56,14 @@ class Chatter:
         self.language_model, self.llm_tokenizer = load_language_model(llm_type, llm_model, device)
         self.device_llm = device
     
+    def del_llm(self):
+        '''
+        Delete the language model to save memory
+        '''
+        del self.language_model
+        del self.llm_tokenizer
+        torch.cuda.empty_cache()
+        
     def load_lmm(self, lmm_type, lmm_model, device):
         '''
         Load large multimodal model (can handle both text and images)
@@ -90,8 +72,16 @@ class Chatter:
         print("Loading large multimodal model {}, version {}".format(lmm_type, lmm_model))
         self.multimodal_model = load_multimodal_model(lmm_type, lmm_model, device)
         self.device_lmm = device
+        self.dtype = next(self.multimodal_model.parameters()).dtype
         
-    def call_vicuna(self, prompts:list, generation_config:dict=None, task:str="questioning"):
+    def del_lmm(self):
+        '''
+        Delete the language model to save memory
+        '''
+        del self.multimodal_model
+        torch.cuda.empty_cache()
+        
+    def call_vicuna(self, prompts:list, generation_config:dict=None, return_probs=False):
         '''
         This function call the questioner model passing the parameters and the prompt. 
         The questioner model should implement the generate function (huggingface syntax).
@@ -102,16 +92,65 @@ class Chatter:
             - generation_config: generation configuration for model.generate() function
             - task: 
         '''
-        # Set the generation config 
-        if generation_config is not None:
-            self.language_model.generation_config = generation_config
         ############################# GENERATE #############################
-        input_ids = self.llm_tokenizer(prompts, padding=True, return_tensors='pt').input_ids.to(self.device_llm)
-        outputs = self.language_model.generate(inputs=input_ids)
-        outputs = self.llm_tokenizer.batch_decode(outputs, skip_special_tokens=True)
+        with torch.no_grad():
+            input_ids = self.llm_tokenizer(prompts, padding=True, return_tensors='pt').input_ids.to(self.device_llm)
+            assert generation_config is not None, "Generation config must be specified"
+            if return_probs:
+                outputs = self.language_model.generate(inputs=input_ids, generation_config=generation_config, return_dict_in_generate=True, output_scores=True)
+                first_token_normalized = torch.nn.functional.softmax(outputs.scores[0], dim=-1)
+                probs = []
+                for batch_item in first_token_normalized:
+                    probs.append((batch_item[3869].item(),batch_item[1939].item())) # Probabilities of yes and no in the first token
+                
+                # Decode the outputs 
+                outputs = self.llm_tokenizer.batch_decode(outputs.sequences, skip_special_tokens=False)  
+                return outputs, probs
+            else:
+                outputs = self.language_model.generate(inputs=input_ids, generation_config=generation_config)
+                outputs = self.llm_tokenizer.batch_decode(outputs, skip_special_tokens=True)
+                return outputs
+    
+    def call_mistral(self, prompts:list):
+        with torch.no_grad():
+            input_ids = self.llm_tokenizer(prompts, padding=True, return_tensors='pt').input_ids.to(self.device_llm)
+            outputs = self.language_model.generate(inputs=input_ids, do_sample=True, max_new_tokens=200)
+            outputs = self.llm_tokenizer.batch_decode(outputs, skip_special_tokens=True)
+            return outputs
+    
+    def call_otter(self, vision_x:torch.Tensor, prompts:list, generation_config:dict=None, task:str="answering"):
+        assert task=="answering", "Otter can only answer questions"
+        lang_x = self.multimodal_model.text_tokenizer(prompts, return_tensors="pt")
+        with torch.no_grad():
+            answer = self.multimodal_model.generate(vision_x=vision_x.to(self.multimodal_model.device, dtype=torch.float16),
+
+            lang_x=lang_x["input_ids"].to(self.multimodal_model.device, dtype=torch.int64),
+
+            attention_mask=lang_x["attention_mask"].to(self.multimodal_model.device),
+
+            max_new_tokens=512,
+
+            no_repeat_ngram_size=3,
+            
+            num_beams=3,
+            
+            pad_token_id=self.multimodal_model.text_tokenizer.pad_token_id,
+            
+            generation_config = generation_config
+            )
+            
+            # Decode the answer
+            answer = self.multimodal_model.text_tokenizer.decode(answer[0], skip_special_tokens=True).split("GPT:")[-1].lstrip().rstrip().split("<|endofchunk|>")[0]
+            
+        return answer
+        
+    def trim_output(self, outputs, task="questioning"):
+        '''
+        function to trim the output of the llm depending on the task
+        '''
         ############################# POST PROCESS #############################
         if task == "questioning":
-            outputs = [output.split("ASSISTANT:")[-1].split("?")[0].strip()+"?" for output in outputs]
+            outputs = [output.split(":")[-1].split("?")[0].strip()+"?" for output in outputs]
         elif task == "summarization" or task == "change_captioning":
             outputs = [output.split("ASSISTANT:")[-1].strip() for output in outputs]
         

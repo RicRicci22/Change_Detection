@@ -163,7 +163,16 @@ cython_debug/
 /repositories
 /results
 /chats_cache
+/chats_cache_template
+images_test
 nohup.out
 /results_chat
 /results_llava
+/validate_llm_eval
+/validate_llm_eval_prob
 /Otter
+keys.py
+*.out
+trash.ipynb
+/results_GPT4
+/results_otter
