@@ -1,11 +1,10 @@
 # # RUN THIS CODE TO CREATE THE DICTIONARY OF CHANGES BASED ON THE GROUND TRUTHS
 # import os
-
-from skimage import io
-import numpy as np
+import os
 import pickle
 import json
-from transformers import AutoTokenizer, AutoModelForCausalLM, GPTQConfig
+from skimage import io
+import numpy as np
 from tqdm import tqdm
 from utils.dataset import EvaluationDataset
 from torch.utils.data import DataLoader
@@ -14,7 +13,7 @@ import requests
 from transformers import GenerationConfig
 from pycocotools.coco import COCO
 from pycocoevalcap.eval import COCOEvalCap
-import os
+import keys
 
 from utils.chat import Chatter
 
@@ -281,7 +280,7 @@ def create_validation_examples_GPT35(true_positives:float=0.2, false_positives:f
     - keeping true positives at 40% and varying the false positives: precision must vary accordingly, recall must be 40%.
     '''
     # OpenAI API Key
-    api_key = "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"
+    api_key = keys.OPENAI_API_KEY
     
     # Defining some examples for in context learning generation
     # ex1 00709
