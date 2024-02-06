@@ -94,34 +94,34 @@ def evaluate_with_llm(path_cds:str=None, device="cuda:0", bunch=False):
         if bunch:
             if file.replace("examples","results").split("/")[1] in os.listdir(path_cds) or "examples" not in file:
                 continue
-        else:
-            dataloader = DataLoader(EvaluationDataset(file), batch_size=8, shuffle=False, num_workers=0, pin_memory=True)
-            with no_grad():
-                for j, batch in enumerate(tqdm(dataloader)):
-                    images, prompts, changes = batch
-                    outputs, probs = chat.call_vicuna(prompts=prompts, generation_config=gen_cfg, return_probs=True)    
-                    for i in range(len(outputs)):
-                        response = outputs[i]
-                        prob = probs[i]
-                        prob = (round(prob[0],2), round(prob[1],2))
-                        response = response.split("ASSISTANT:")[1].strip()
-                        change = changes[i]
-                        try:
-                            results[images[i]].append((change, response, prob))
-                        except:
-                            results[images[i]] = [(change, response, prob)]
-            
-            del dataloader
         
-            # 5. Save the results
-            if bunch:
-                with open(file.replace("examples","results"), "w") as f:
-                    json.dump(results, f, indent=4)
-            else:
-                file_chunks = file.split("/")
+        dataloader = DataLoader(EvaluationDataset(file), batch_size=8, shuffle=False, num_workers=0, pin_memory=True)
+        with no_grad():
+            for j, batch in enumerate(tqdm(dataloader)):
+                images, prompts, changes = batch
+                outputs, probs = chat.call_vicuna(prompts=prompts, generation_config=gen_cfg, return_probs=True)    
+                for i in range(len(outputs)):
+                    response = outputs[i]
+                    prob = probs[i]
+                    prob = (round(prob[0],2), round(prob[1],2))
+                    response = response.split("ASSISTANT:")[1].strip()
+                    change = changes[i]
+                    try:
+                        results[images[i]].append((change, response, prob))
+                    except:
+                        results[images[i]] = [(change, response, prob)]
+            
+        del dataloader
+        
+        # 5. Save the results
+        if bunch:
+            with open(file.replace("examples","results"), "w") as f:
+                json.dump(results, f, indent=4)
+        else:
+            file_chunks = file.split("/")
                 
-                with open(file_chunks[0]+"/evaluation_"+file_chunks[1], "w") as f:
-                    json.dump(results, f, indent=4)
+            with open(file_chunks[0]+"/evaluation_"+file_chunks[1], "w") as f:
+                json.dump(results, f, indent=4)
 
 def llm_evaluation_summary(path_results:str, path_changes:str):
     '''
@@ -146,6 +146,7 @@ def llm_evaluation_summary(path_results:str, path_changes:str):
     predictions = np.zeros((len(results), len(ST_CLASSES), len(ST_CLASSES)))
     
     image_names = []
+    skipped = 0
     for i, (image_name, changes_evaluated) in enumerate(results.items()):
         image_names.append(image_name)
         if "png" in image_name:
@@ -153,7 +154,7 @@ def llm_evaluation_summary(path_results:str, path_changes:str):
         else:
             gt_changes = changes_gt[image_name+'.png']
             
-        for change, response in changes_evaluated:
+        for change, response, _ in changes_evaluated:
             class_1 = change.split(" ")[1]
             if class_1 == "low":
                 class_1 = "low_vegetation"
@@ -171,59 +172,108 @@ def llm_evaluation_summary(path_results:str, path_changes:str):
                 class_2 = "sports_field"
             if change in gt_changes:
                 ground_truth[i, ST_CLASSES.index(class_1), ST_CLASSES.index(class_2)] = 1
-            
-            # TODO correct it for better results
-            if "yes," in response.lower():
+        
+        
+            if "yes," in response.lower() or "yes." in response.lower() or "yes</s>" in response.lower():
                 #percentage = percentages[0]
                 predictions[i, ST_CLASSES.index(class_1), ST_CLASSES.index(class_2)] = 1 #* percentage
-            if "no," in response.lower():
+            elif "no," in response.lower() or "no." in response.lower() or "no</s>" in response.lower():
                 #percentage = percentages[1]
                 predictions[i, ST_CLASSES.index(class_1), ST_CLASSES.index(class_2)] = -1 #* percentage
+            else:
+                skipped += 1
         
-        ground_truth[i].diagonal().fill(0)
-        # predictions[i].diagonal().fill(0)
+        # ground_truth[i].diagonal().fill(0)
     
+    print("Skipped answers: ", skipped)
+    # Calculate general precision and recall (for all the classes)
     recalls = np.zeros((ground_truth.shape[0],))
     precisions = np.zeros((ground_truth.shape[0],))
     for i in range(ground_truth.shape[0]):
-        detections = 0 
+        detections = 0
         missed = 0 
         false = 0 
         for j in range(ground_truth.shape[1]):
             for z in range(ground_truth.shape[2]):
                 if j != z:
                     if ground_truth[i,j,z] == 1 and predictions[i,j,z] == 1:
-                        detections += 1
+                        detections += 1     
                     if ground_truth[i,j,z] == 1 and predictions[i,j,z] != 1:
                         missed += 1
                     if ground_truth[i,j,z] == -1 and predictions[i,j,z] == 1:
                         false += 1
         
         if detections == 0:
+            # It is ok if there is at least one change per image.
             recalls[i] = 0
             precisions[i] = 0
         else:
             recalls[i] = detections/(detections+missed)
             precisions[i] = detections/(detections+false)
+        
+    for c in range(0,6):
+        recalls_class = []
+        precisions_class = []
+        for i in range(ground_truth.shape[0]):
+            detections_class = 0
+            missed_class = 0
+            false_class = 0
+            for j in range(ground_truth.shape[1]):
+                for z in range(ground_truth.shape[2]):
+                    if j != z:
+                        if ground_truth[i,j,z] == 1 and predictions[i,j,z] == 1:
+                            detections += 1     
+                        if ground_truth[i,j,z] == 1 and predictions[i,j,z] != 1:
+                            missed += 1
+                        if ground_truth[i,j,z] == -1 and predictions[i,j,z] == 1:
+                            false += 1
+                        if j == c or z == c :
+                            if ground_truth[i,j,z] == 1 and predictions[i,j,z] == 1:
+                                detections_class += 1
+                            if ground_truth[i,j,z] == 1 and predictions[i,j,z] != 1:
+                                missed_class += 1
+                            if ground_truth[i,j,z] == -1 and predictions[i,j,z] == 1:
+                                false_class += 1
+            
+            if detections_class == 0 and np.sum(ground_truth[i,c,:]+1)+np.sum(ground_truth[i,:,c]+1) != 0:
+                recalls_class.append(0)
+                precisions_class.append(0)
+            elif detections_class != 0 and np.sum(ground_truth[i,c,:]+1)+np.sum(ground_truth[i,:,c]+1) != 0:
+                recalls_class.append(detections_class/(detections_class+missed_class))
+                precisions_class.append(detections_class/(detections_class+false_class))
+            else:
+                continue
+        
+        recalls_class = np.array(recalls_class)
+        precisions_class = np.array(precisions_class)
+        f1_scores_class = 2*(precisions_class*recalls_class)/(precisions_class+recalls_class)
+        f1_scores_class = np.nan_to_num(f1_scores_class)
+        print("Average F1 class " + str(c)+": ", np.mean(f1_scores_class))
             
     f1_scores = 2*(precisions*recalls)/(precisions+recalls)
     # Substitute 0 for nan values in f1_scores
     f1_scores = np.nan_to_num(f1_scores)
-    #print(f1_scores)
     average = np.mean(f1_scores)
-    #print(f1_scores)
-    # print("Average f1 score: ", np.mean(f1_scores))
-    # # Order the results from higher to lower 
+    # Order the results from higher to lower 
     # index_new = np.argsort(f1_scores)
     # index_new = index_new[::-1]
-    # print(f1_scores[index_new[0]])
-    # print(image_names[index_new[0]])
+    # print(f1_scores[index_new[-150]])
+    # print(image_names[index_new[-150]])
+    # #print(f1_scores[image_names.index("01624.png")])
+    # #print(image_names[index_new[-1]])
     # # Get a confusion matrix like plot for the index_new[0] entry of results
     # import matplotlib.pyplot as plt
-    # plt.imshow(predictions[index_new[0]])
+    # plt.imshow(predictions[index_new[-150]])
     # print(predictions[index_new[0]])
     # plt.savefig("predictions.png")
-    # plt.imshow(ground_truth[index_new[0]])
+    # plt.imshow(ground_truth[index_new[-150]])
+    # plt.savefig("true.png")
+    
+    # import matplotlib.pyplot as plt
+    # plt.imshow(predictions[image_names.index("01624.png")],vmin=-1, vmax=1)
+    # print(predictions[image_names.index("01624.png")])
+    # plt.savefig("predictions.png")
+    # plt.imshow(ground_truth[image_names.index("01624.png")])
     # plt.savefig("true.png")
     return average
 
@@ -482,38 +532,106 @@ def calculate_perfect_score(templates_path:str):
         
     with open("best_scores.pkl", "wb") as f:
         pickle.dump(all_scores, f)
-            
-
+        
+def evaluate_with_GPT35(image):
+    '''
+    This function evaluates all the results of the five methods on a particular image using GPT 3.5
+    '''
+    files = ["results_GPT4/cds.json", "results_otter/results_otter_chat.json", "results_otter/results_otter_chat_template.json", "results_otter/results_otter_direct.json", "results_otter/results_otter_indirect.json"]
+    classes = ['water', 'ground', 'low vegetation', 'tree', 'building', 'sports field']
+    
+    # OpenAI API Key
+    api_key = keys.OPENAI_API_KEY
+    predictions = np.zeros((len(classes), len(classes)))
+    
+    for file in files:
+        skipped = 0 
+        cds = json.load(open(file, "r"))
+        try: 
+            description = cds[image]
+        except:
+            description = cds[image+".png"]
+        print("Evaluating " + file)
+        for i in range(len(classes)):
+            for j in range(len(classes)):
+                if i != j:
+                    change = "a " + classes[i]+" area has transformed into a "+classes[j]+" area."
+                    # Build the prompt 
+                    prompt = "Here is a paragraph describing some changes: \"<paragraph>\". In the paragraph, are there references to the fact that <fact>?"
+                    prompt = prompt.replace("<paragraph>", description)
+                    prompt = prompt.replace("<fact>", change)
+                    # Interrogate GPT 3.5 with this prompt
+                    headers = {
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {api_key}"
+                    }
+                    
+                    payload = {
+                    "model": "gpt-3.5-turbo",
+                    "messages": [
+                        {
+                        "role": "user",
+                        "content": [
+                            {
+                            "type": "text",
+                            "text": prompt
+                            }
+                        ]
+                        }
+                    ],
+                    "max_tokens": 512,
+                    "temperature": 0.0,
+                    }
+                    
+                    response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
+                    
+                    response = response.json()["choices"][0]["message"]["content"]
+                    
+                    if "yes," in response.lower() or "yes." in response.lower() or "yes</s>" in response.lower():
+                        #percentage = percentages[0]
+                        predictions[i, j] = 1 #* percentage
+                    elif "no," in response.lower() or "no." in response.lower() or "no</s>" in response.lower():
+                        #percentage = percentages[1]
+                        predictions[i, j] = -1 #* percentage
+                    else:
+                        skipped += 1
+        
+        print("Skipped answers: ", skipped)
+        import matplotlib.pyplot as plt
+        plt.imshow(predictions,vmin=-1, vmax=1)
+        plt.savefig(file+".png")
+    
 
 if __name__=="__main__":
     # import os
-    # path_cds = "validate_llm_eval/validation_examples_template_1.0_1.0.json"
+    # path_cds = "validate_llm_eval"
     
-    # results = evaluate_with_llm(path_cds, device="cuda:1")
+    # results = evaluate_with_llm(path_cds, device="cuda:0", bunch=True)
     
     # with open("validate_llm_eval/validation_results_template_1.0_1.0.json", "w") as f:
     #     json.dump(results, f, indent=4)
     
-    # average = llm_evaluation_summary("results_GPT4/evaluation_results.json", "GT_changes.json")
-    # print(average)
-    all_results = np.zeros((11,11))
-    for i, tp in enumerate(range(0, 11, 1)):
-        tp = tp/10
-        for j, fp in enumerate(range(0, 11, 1)):
-            if tp==0.0 and fp==0:
-                continue
-            fp = fp/10
-            print(tp, fp)
-            path = "validate_llm_eval/validation_results_template_"+str(tp)+"_"+str(fp)+".json"
-            score = llm_evaluation_summary(path,"GT_changes.json")
-            all_results[i,j] = round(score,2)
-    print(all_results)
+    average = llm_evaluation_summary("results_otter/evaluation_results_otter_chat_template.json", "GT_changes.json")
+    print(average)
+    #evaluate_with_GPT35("04639")
+    # all_results = np.zeros((11,11))
+    # for i, tp in enumerate(range(0, 11, 1)):
+    #     tp = tp/10
+    #     for j, fp in enumerate(range(0, 11, 1)):
+    #         if tp==0.0 and fp==0:
+    #             continue
+    #         fp = fp/10
+    #         print(tp, fp)
+    #         path = "validate_llm_eval/validation_results_template_"+str(tp)+"_"+str(fp)+".json"
+    #         score = llm_evaluation_summary(path,"GT_changes.json")
+    #         all_results[i,j] = round(score,2)
+    # print(all_results)
     
     # # Save the matrix
     # with open("validation_results_vicuna.pkl", "wb") as f:
     #     pickle.dump(all_results, f)
 
-    # evaluate_with_llm("results_otter/results_otter_chat_template.json", device="cuda:0")
+    # evaluate_with_llm("results_GPT4/cds.json", device="cuda:1")
         
     # print(all_results)
     # # validate_templates("validate_llm_eval")
