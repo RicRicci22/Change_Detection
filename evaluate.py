@@ -21,11 +21,15 @@ ST_COLORMAP = [[0,0,255], [128,128,128], [0,128,0], [0,255,0], [128,0,0], [255,0
 
 ST_CLASSES = ['water', 'ground', 'low_vegetation', 'tree', 'building', 'sports_field']
 
-def create_gt_changes():
+def create_gt_changes()->None:
     '''
     This function examines the semantic change maps and creates a dictionary containing the ground truth changes for each image.
     '''
     changes = dict()
+    
+    areas = np.zeros((len(ST_CLASSES), len(ST_CLASSES)), dtype=np.int32)
+    images_with_change = np.zeros((len(ST_CLASSES), len(ST_CLASSES)), dtype=np.int32)
+    
     for img_name in tqdm(os.listdir("/media/Melgani/Riccardo/Datasets/segmentation/Semantic segmentation/second_dataset/public/test/label1")):
         label_1 = io.imread("/media/Melgani/Riccardo/Datasets/segmentation/Semantic segmentation/second_dataset/public/test/label1/" + img_name, pilmode="RGB")
         label_2 = io.imread("/media/Melgani/Riccardo/Datasets/segmentation/Semantic segmentation/second_dataset/public/test/label2/" + img_name, pilmode="RGB")
@@ -38,9 +42,7 @@ def create_gt_changes():
         # Convert in indices 
         for color in ST_COLORMAP:
             color_array = np.array(color).reshape((1,1,3))
-            test = np.subtract(label_1,color_array)
             locations_1 = np.sum(np.abs(np.subtract(label_1,color_array)),axis=2)
-            #print(locations_1[460,460])
             locations_2 = np.sum(np.abs(np.subtract(label_2,color_array)),axis=2)
             converted_1[locations_1==0] = ST_COLORMAP.index(color)+1
             converted_2[locations_2==0] = ST_COLORMAP.index(color)+1
@@ -49,20 +51,24 @@ def create_gt_changes():
         changes_string = []
         for index in range(0, len(ST_CLASSES)):
             indices_1 = np.where(converted_1==index+1)
-            #print(indices_1)
             values_2 = converted_2[indices_1]
             single_results = np.unique(values_2).astype(np.int8)
             for value in list(single_results):
                 if value-1 != index:
                     changes_string.append("a " + ST_CLASSES[index]+" area has transformed into a "+ST_CLASSES[value-1]+" area.")
+                    areas[index, value-1] += np.sum(values_2==value)
+                    images_with_change[index, value-1] += 1
                     
         changes[img_name] = changes_string
         
-        # Save the dictionary 
-        with open('changes.json', 'w') as fp:
-            json.dump(changes, fp, indent=4)
+    print(areas)
+    print(images_with_change)
+    
+    # Save the dictionary 
+    with open('changes.json', 'w') as fp:
+        json.dump(changes, fp, indent=4)
 
-def evaluate_with_llm(path_cds:str=None, device="cuda:0", bunch=False):
+def evaluate_with_llm(path_cds:str=None, device="cuda:0", bunch=False)->None:
     '''
     This function takes some paragraphs, and evaluates if some facts are present or not in each paragraph. 
     Input:
@@ -182,8 +188,6 @@ def llm_evaluation_summary(path_results:str, path_changes:str):
                 predictions[i, ST_CLASSES.index(class_1), ST_CLASSES.index(class_2)] = -1 #* percentage
             else:
                 skipped += 1
-        
-        # ground_truth[i].diagonal().fill(0)
     
     print("Skipped answers: ", skipped)
     # Calculate general precision and recall (for all the classes)
@@ -603,6 +607,7 @@ def evaluate_with_GPT35(image):
     
 
 if __name__=="__main__":
+    create_gt_changes()
     # import os
     # path_cds = "validate_llm_eval"
     
@@ -611,8 +616,8 @@ if __name__=="__main__":
     # with open("validate_llm_eval/validation_results_template_1.0_1.0.json", "w") as f:
     #     json.dump(results, f, indent=4)
     
-    average = llm_evaluation_summary("results_otter/evaluation_results_otter_chat_template.json", "GT_changes.json")
-    print(average)
+    # average = llm_evaluation_summary("results_otter/evaluation_results_otter_chat_template.json", "GT_changes.json")
+    # print(average)
     #evaluate_with_GPT35("04639")
     # all_results = np.zeros((11,11))
     # for i, tp in enumerate(range(0, 11, 1)):
