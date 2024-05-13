@@ -221,8 +221,8 @@ if __name__ == "__main__":
         "use_labels": True, # If true, it can use the labels to crop the image in the area of the biggest change
     }
     
-    chats_postprocessed_path = "results_chat/chats_postprocessed.json"
-    #summaries_path = "results_chat/summaries.json"
+    # chats_postprocessed_path = "results_chat/chats_postprocessed.json"
+    # summaries_path = "results_chat/summaries.json"
     # print("################### Starting chatting ###################")
     # chat_on_images(llms_params, dataset_params)
     # print("################### Finished chatting ###################")

@@ -52,6 +52,7 @@ class MultitemporalImageSet(Dataset):
         
         if self.method == 1:    
             vision_x = self.image_processor.preprocess([image_1,image_2], return_tensors="pt")["pixel_values"].unsqueeze(0)
+            print(vision_x.shape)
             return image_name, vision_x
         if self.method == 2:
             vision_x = self.image_processor.preprocess([image_1], return_tensors="pt")["pixel_values"].unsqueeze(1)

@@ -67,7 +67,7 @@ class Chatter:
     def load_lmm(self, lmm_type, lmm_model, device):
         '''
         Load large multimodal model (can handle both text and images)
-        This is used either for answer to the questions looking at the image, or for direct extraction (eg. llava model)
+        This is used either for answer to the questions looking at the image, or for direct extraction (eg. otter model)
         '''
         print("Loading large multimodal model {}, version {}".format(lmm_type, lmm_model))
         self.multimodal_model = load_multimodal_model(lmm_type, lmm_model, device)
