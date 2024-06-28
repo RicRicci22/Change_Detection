@@ -13,7 +13,7 @@ import os
 from tqdm import tqdm
 import json
 import pickle
-
+import gc
 import torch
 
 from utils.dataset import MultitemporalImageSet, CDSet, ChatSet, SummarySet
@@ -22,34 +22,37 @@ import transformers
 from transformers import GenerationConfig
 from utils.conversation import Conversation
 
-template_questions = ["Have there been any changes in the appearence of buildings between the two images?",
-"Are there any signs of damage to the buidings between the two images?",
+template_questions = ["Have there been any changes in the appearance of buildings between the two images?",
+"Are there any signs of damage to the buildings between the two images?",
 "Have new buildings been constructed in the area?",
 "Have buildings been removed between the two images?",
-"Have parts been added to the existing buidings between the two images?",
+"Have parts been added to the existing buildings between the two images?",
 "Are there signs of new construction sites in the area?",
-"Have new playgrounds appeared in the area?",
-"Have there been any changes in the appearence of playgrounds between the two images?",
-"Have playgrounds been removed between the two images?",
-"Are there any signs of damage to the playgrounds between the two images?"]
+"Have new sports field appeared in the area?",
+"Have there been any changes in the appearance of sports field between the two images?",
+"Have sports field been removed between the two images?",
+"Are there any signs of damage to the sports field between the two images?"]
 
-template_only_buidlings = ["Have there been any changes in the appearence of buildings between the two images?",
-"Are there any signs of damage to the buidings between the two images?",
+template_reduced = ["Have there been any changes in the appearance of buildings between the two images?",
+"Are there any signs of damage to the buildings between the two images?",
 "Have new buildings been constructed in the area?",
 "Have buildings been removed between the two images?",
-"Have parts been added to the existing buidings between the two images?"]
+"Have parts been added to the existing buildings between the two images?"]
 
-template_questions_added_ = ["Have there been any changes in the appearence of buildings between the two images?",
-"Are there any signs of damage to the buidings between the two images?",
+template_extended = ["Have there been any changes in the appearance of buildings between the two images?",
+"Are there any signs of damage to the buildings between the two images?",
 "Have new buildings been constructed in the area?",
 "Have buildings been removed between the two images?",
-"Have parts been added to the existing buidings between the two images?",
+"Have parts been added to the existing buildings between the two images?",
 "Are there signs of new construction sites in the area?",
-"Have new playgrounds appeared in the area?",
-"Have there been any changes in the appearence of playgrounds between the two images?",
-"Have playgrounds been removed between the two images?",
-"Are there any signs of damage to the playgrounds between the two images?"]
-
+"Have new sports field appeared in the area?",
+"Have there been any changes in the appearance of sports field between the two images?",
+"Have sports field been removed between the two images?",
+"Are there any signs of damage to the sports field between the two images?",
+"Have new water bodies appeared in the area?",
+"If there are water bodies, have they changed in size between the two images?",
+"Have water bodies disappeared from the first to the second image?"
+]
 
 
 def create_description(images_path, approach:str, device="cuda:0"):
@@ -81,7 +84,7 @@ def create_description(images_path, approach:str, device="cuda:0"):
         gen_cfg_aswerer.text_config["temperature"] = 0.2
         
         # Encode the prompt
-        prompt = ["<image>User: Describe the changes between these two views of the same area at different times. Describe only the changes, if there are no noticeable changes, say so. GPT:<answer>"]
+        prompt = ["<image>User: Describe the changes between these two views of the same area at different times. Describe only the changes, if there are no noticeable changes, mention it accordingly. GPT:<answer>"]
         
         with torch.no_grad():
             for _, batch in enumerate(tqdm(dataloader)):
@@ -105,53 +108,53 @@ def create_description(images_path, approach:str, device="cuda:0"):
         # 5. Load the dataset of descriptions
         # 6. Use vicuna to extract the changes from the descriptions
         chat = Chatter()
-        multimodal_model = "luodian/OTTER-Image-MPT7B"
-        # 1. Load the model (otter)
-        chat.load_lmm("otter", multimodal_model, device)
-        image_processor = transformers.CLIPImageProcessor()
-        # 2. Load the dataset and create the dataloader
-        assert os.path.isdir(images_path), "Double check the directory path"
-        dataset = MultitemporalImageSet(images_path=images_path, image_processor=image_processor, method=2)
-        dataloader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=False, num_workers=0, pin_memory=True)
+        # multimodal_model = "luodian/OTTER-Image-MPT7B"
+        # # 1. Load the model (otter)
+        # chat.load_lmm("otter", multimodal_model, device)
+        # image_processor = transformers.CLIPImageProcessor()
+        # # 2. Load the dataset and create the dataloader
+        # assert os.path.isdir(images_path), "Double check the directory path"
+        # dataset = MultitemporalImageSet(images_path=images_path, image_processor=image_processor, method=2)
+        # dataloader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=False, num_workers=0, pin_memory=True)
         
-        # 3. Generate the descriptions
-        results_otter_indirect = {}
+        # # 3. Generate the descriptions
+        # results_otter_indirect = {}
         
-        # Getting generation config
-        gen_cfg_aswerer = GenerationConfig.from_pretrained(multimodal_model, config_file_name="config.json")
-        gen_cfg_aswerer.text_config["do_sample"] = True
-        gen_cfg_aswerer.text_config["top_p"] = 0.95
-        gen_cfg_aswerer.text_config["temperature"] = 0.2
+        # # Getting generation config
+        # gen_cfg_aswerer = GenerationConfig.from_pretrained(multimodal_model, config_file_name="config.json")
+        # gen_cfg_aswerer.text_config["do_sample"] = True
+        # gen_cfg_aswerer.text_config["top_p"] = 0.95
+        # gen_cfg_aswerer.text_config["temperature"] = 0.2
         
-        # Encode the prompt
-        prompt = ["<image>User: Describe in detail this satellite image. GPT:<answer>"]
+        # # Encode the prompt
+        # prompt = ["<image>User: Describe in detail this satellite image. GPT:<answer>"]
         
-        with torch.no_grad():
-            for _, batch in enumerate(tqdm(dataloader)):
-                image_names, vision_1, vision_2 = batch
-                # Convert tensors to the model's data type
-                vision_1 = vision_1.to(dtype=chat.multimodal_model.dtype)
-                vision_2 = vision_2.to(dtype=chat.multimodal_model.dtype)
-                # Generate
-                out_1 = chat.call_otter(vision_x=vision_1, prompts=prompt, generation_config=gen_cfg_aswerer)
-                out_2 = chat.call_otter(vision_x=vision_2, prompts=prompt, generation_config=gen_cfg_aswerer)
+        # with torch.no_grad():
+        #     for _, batch in enumerate(tqdm(dataloader)):
+        #         image_names, vision_1, vision_2 = batch
+        #         # Convert tensors to the model's data type
+        #         vision_1 = vision_1.to(dtype=chat.multimodal_model.dtype)
+        #         vision_2 = vision_2.to(dtype=chat.multimodal_model.dtype)
+        #         # Generate
+        #         out_1 = chat.call_otter(vision_x=vision_1, prompts=prompt, generation_config=gen_cfg_aswerer)
+        #         out_2 = chat.call_otter(vision_x=vision_2, prompts=prompt, generation_config=gen_cfg_aswerer)
                 
-                results_otter_indirect[image_names[0]] = (out_1,out_2)  # to change when implementing batch inference
-                # Save the results dictionary as a json file
-                with open("results_otter/intermediate_results_otter_indirect.json", "w") as f:
-                    json.dump(results_otter_indirect, f, indent=4)
+        #         results_otter_indirect[image_names[0]] = (out_1,out_2)  # to change when implementing batch inference
+        #         # Save the results dictionary as a json file
+        #         with open("results_otter/intermediate_results_levir_otter_indirect.json", "w") as f:
+        #             json.dump(results_otter_indirect, f, indent=4)
         
-        chat.del_lmm()
+        # chat.del_lmm()
         
         # 4.
         model = "TheBloke/vicuna-13B-v1.5-GPTQ"
         chat.load_llm("vicuna", model, device)
         
         # 5. 
-        path_descriptions = "results_otter/intermediate_results_otter_indirect.json"
+        path_descriptions = "results_otter/intermediate_results_levir_otter_indirect.json"
         dataset = CDSet(path_dict_descriptions=path_descriptions)
         
-        dataloader = torch.utils.data.DataLoader(dataset, batch_size=8, shuffle=False, num_workers=0, pin_memory=True)
+        dataloader = torch.utils.data.DataLoader(dataset, batch_size=4, shuffle=False, num_workers=0, pin_memory=True)
         
         gen_cfg = GenerationConfig.from_pretrained(model)
         gen_cfg.max_new_tokens=200
@@ -165,7 +168,7 @@ def create_description(images_path, approach:str, device="cuda:0"):
         
         for batch in tqdm(dataloader):
             image_names, prompts = batch
-            out_pre = chat.call_vicuna(prompts=prompts, generation_config=gen_cfg, task="change_captioning")
+            out_pre = chat.call_vicuna(prompts=prompts, generation_config=gen_cfg)
             for i in range(len(image_names)):
                 name = image_names[i]
                 results_otter_indirect[name] = out_pre[i].strip().replace("\n","")
@@ -174,8 +177,10 @@ def create_description(images_path, approach:str, device="cuda:0"):
         return results_otter_indirect
         
     elif approach=="otter_chat":
-        template=True
-        chat_cache = "chats_cache_template/"
+        template=False
+        #template_questions = template_questions
+        chat_cache = "chats_cache_guided_b_sf_w/"
+        
         questioner_name = "TheBloke/vicuna-13B-v1.5-GPTQ"
         answerer_name = "luodian/OTTER-Image-MPT7B"
         
@@ -212,14 +217,19 @@ def create_description(images_path, approach:str, device="cuda:0"):
         a_dataloader = torch.utils.data.DataLoader(a_dataset, batch_size=1, shuffle=False, num_workers=0, pin_memory=True)
         
         conversation = Conversation()
-        user_intention = ""
+        user_intention = "I am only interested in changes related to buildings and sports fields"
         conversation.generate_first_conversations(image_path=image_path, user_intention=user_intention, chat_cache=chat_cache)
+        
+        n_rounds = n_rounds if not template else len(template_extended)
         
         for i in range(n_rounds):
             if not template:
                 # Generate in batch the questions using Vicuna
-                chat.load_llm("vicuna", questioner_name, device)
-                for batch in tqdm(q_dataloader):
+                if i == 0:
+                    chat.load_llm("vicuna", questioner_name, device)
+                else:
+                    chat.move_llm(device)
+                for j, batch in tqdm(enumerate(q_dataloader)):
                     image_names, prompts = batch
                     # Generate 
                     question = chat.call_vicuna(prompts=prompts, generation_config=gen_cfg_questioner)
@@ -235,23 +245,23 @@ def create_description(images_path, approach:str, device="cuda:0"):
                         # Dump the messages
                         with open(chat_cache+name.split(".")[0]+".pkl", "wb") as file:
                             pickle.dump(messages, file)
-                chat.del_llm()
+                chat.move_llm("cpu")
             else:
-                # Get templates 
-                template_question = template_questions[i]
                 for img_name in os.listdir(images_path+"/im1"):
                     with open(chat_cache+img_name.split(".")[0]+".pkl", "rb") as file:
                         messages = pickle.load(file)
-                        messages.append(["ASSISTANT",template_question])
+                        messages.append(["ASSISTANT",template_extended[i]])
 
                     with open(chat_cache+img_name.split(".")[0]+".pkl", "wb") as file:
                         pickle.dump(messages, file)
-                        
+            
             # Load otter model
-            if not template or i==0:
+            if i == 0:
                 chat.load_lmm("otter", answerer_name, device)
+            else:
+                chat.move_lmm(device)
             # Answer the questions using Otter
-            for batch in tqdm(a_dataloader):
+            for j, batch in tqdm(enumerate(a_dataloader)):
                 image_names, vision_x, prompts = batch 
                 # Convert tensors to the model's data type
                 vision_x = vision_x.to(dtype=chat.multimodal_model.dtype)
@@ -269,9 +279,8 @@ def create_description(images_path, approach:str, device="cuda:0"):
                     with open(chat_cache+name.split(".")[0]+".pkl", "wb") as file:
                         pickle.dump(messages, file)
             
-            if not template:
-                chat.del_lmm()
-
+            chat.move_lmm("cpu")
+        
         # Load the llm
         chat.load_llm("vicuna", questioner_name, device)
         
@@ -290,15 +299,15 @@ def create_description(images_path, approach:str, device="cuda:0"):
         
         return results
     else:
-        raise Exception("Find a suitable approach to test!")
+        raise Exception("Insert a suitable approach to test!")
 
 if __name__ == "__main__":
-    approach = "otter_direct"
-    #image_path = "/media/Melgani/Riccardo/Datasets/segmentation/Semantic segmentation/second_dataset/public/test"
-    image_path = "images_test"
+    approach = "otter_chat" # otter_direct, otter_indirect, otter_chat
+    image_path = "/media/Melgani/Riccardo/Datasets/segmentation/Semantic segmentation/second_dataset/public/test"
+    #image_path = "levir_cc/images/test/"
 
-    results = create_description(images_path=image_path,approach=approach,device="cuda:0")
+    results = create_description(images_path=image_path,approach=approach,device="cuda:1")
     
     # Save the results dictionary as a json file 
-    with open("results_otter/results_"+approach+"_template_new.json", "w") as f:
+    with open("results_otter/results_second_"+approach+"_guided_buildings_sportsfield_water.json", "w") as f:
         json.dump(results, f, indent=4)

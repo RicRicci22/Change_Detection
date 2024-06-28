@@ -7,6 +7,7 @@ import base64
 import requests
 from tqdm import tqdm 
 import time
+from keys import OPENAI_API_KEY
 
 
 # Function to encode the image
@@ -14,10 +15,14 @@ def encode_image(image_path):
   with open(image_path, "rb") as image_file:
     return base64.b64encode(image_file.read()).decode('utf-8')
 
-with open("GPT-4_data.json", "r") as f:
-    data = json.load(f)
+if os.path.exists("GPT-4_data_new.json"):
+    with open("GPT-4_data_new.json", "r") as f:
+        data = json.load(f)
+else:
+    data = {}
         
 path_images = "/media/Melgani/Riccardo/Datasets/segmentation/Semantic segmentation/second_dataset/public/test"
+path_images = "levir_cc/images/test/"
 
 images = os.listdir(path_images+"/im1")
 
@@ -27,10 +32,12 @@ already_done = [name.split(".")[0] for name in list(data.keys())]
 todo = list(set(images) - set(already_done))
 
 # OpenAI API Key
-api_key = "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"
+api_key = OPENAI_API_KEY
 
 data_new = {}
-
+for key, value in data.items():
+    data_new[key] = value
+    
 for image in tqdm(todo):
     im1_path = os.path.join(path_images, "im1", image+".png")
     im2_path = os.path.join(path_images, "im2", image+".png")
@@ -45,7 +52,7 @@ for image in tqdm(todo):
     }
 
     payload = {
-    "model": "gpt-4-vision-preview",
+    "model": "gpt-4o",
     "messages": [
         {"role":"system", "content": "I'm a user interested in textual descriptions of the changes occurred between two satellite images and you are an assistant that can help me in this task. I will upload both images together in the prompt. You must directly describe the changes between them without relying on additional tools. I'm interested in structural changes (for example the construction of a new building, changes in land use, and others that are pertinent to remote sensing). You must avoid to describe changes that are related to the image acquisition or seasonality."},
         {"role": "system", "content":'''You must respond with an accurate, clear and easy to follow description of the changes. The description must be split in two parts. 
@@ -83,7 +90,6 @@ for image in tqdm(todo):
     }
 
     response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
-    
     data_new[image+".txt"] = response.json()["choices"][0]["message"]["content"]
     
     # Save it in the json file

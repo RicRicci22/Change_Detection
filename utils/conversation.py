@@ -9,10 +9,9 @@ SYSTEM = (
 )
 
 FIRST_USER_MESSAGE = (
-    "I am interested in knowing which changes happened between two satellite images of the same area area acquired at different times. "
+    "I am interested in knowing which changes happened between two satellite images of the same area acquired at different times. "
     "I can look at the two images and answer your questions one by one. "
     "You must produce questions focused on structural changes in the area layout. It must be possible to answer the questions just by looking at the rgb images. "
-    "After each answer, you should stop asking more questions if you think there is sufficient information. In the case you want to stop, you can answer with the word \"stop\"."
 )
 
 NEXT_USER_MESSAGE = (

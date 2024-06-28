@@ -6,15 +6,13 @@ from Otter.src.otter_ai.models.otter.modeling_otter import OtterForConditionalGe
 
 def load_hug_model(model, device):
     tokenizer = AutoTokenizer.from_pretrained(model, use_fast=True, padding_side="left")
-    gptq_config = GPTQConfig(bits=4, use_exllama=True, exllama_config={"version":2})
+    gptq_config = GPTQConfig(bits=4, use_exllama=True, exllama_config={"version":2}) # To CHANGE to use_exllama=False when doing chat inference
     model = AutoModelForCausalLM.from_pretrained(model,
                                                 device_map=device,
                                                 trust_remote_code=False,
                                                 quantization_config=gptq_config,
                                                 revision="main")
     
-    
-
     if hasattr(model.config, "max_length"):
         context_len = model.config.max_length
     else:

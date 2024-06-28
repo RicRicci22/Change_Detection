@@ -1,5 +1,7 @@
 import torch
+import gc
 from utils.utils import load_mistral, load_openassistant, load_hug_model, load_vicuna, load_blip2, load_otter
+from numba import cuda
 
 LLM_MODELS = ["chatgpt", "vicuna", "mistral", "openassistant"]
 LMM_MODELS = ["blip2", "otter"]
@@ -56,12 +58,14 @@ class Chatter:
         self.language_model, self.llm_tokenizer = load_language_model(llm_type, llm_model, device)
         self.device_llm = device
     
-    def del_llm(self):
+    def move_llm(self, device):
         '''
         Delete the language model to save memory
         '''
-        del self.language_model
-        del self.llm_tokenizer
+        self.language_model.to(device)
+        # del self.language_model
+        # del self.llm_tokenizer
+        # gc.collect()
         torch.cuda.empty_cache()
         
     def load_lmm(self, lmm_type, lmm_model, device):
@@ -74,11 +78,14 @@ class Chatter:
         self.device_lmm = device
         self.dtype = next(self.multimodal_model.parameters()).dtype
         
-    def del_lmm(self):
+    def move_lmm(self, device):
         '''
-        Delete the language model to save memory
+        Delete the multimodal model to save memory
         '''
-        del self.multimodal_model
+        self.multimodal_model.to(device)
+        # del self.language_model
+        # del self.llm_tokenizer
+        gc.collect()
         torch.cuda.empty_cache()
         
     def call_vicuna(self, prompts:list, generation_config:dict=None, return_probs=False):

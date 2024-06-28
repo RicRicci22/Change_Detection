@@ -68,7 +68,7 @@ def create_gt_changes()->None:
     with open('changes.json', 'w') as fp:
         json.dump(changes, fp, indent=4)
 
-def evaluate_with_llm(path_cds:str=None, device="cuda:0", bunch=False)->None:
+def evaluate_with_llm(path_cds:str=None, device="cuda:0", bunch=False, gt_descriptions=None)->None:
     '''
     This function takes some paragraphs, and evaluates if some facts are present or not in each paragraph. 
     Input:
@@ -101,9 +101,9 @@ def evaluate_with_llm(path_cds:str=None, device="cuda:0", bunch=False)->None:
             if file.replace("examples","results").split("/")[1] in os.listdir(path_cds) or "examples" not in file:
                 continue
         
-        dataloader = DataLoader(EvaluationDataset(file), batch_size=8, shuffle=False, num_workers=0, pin_memory=True)
+        dataloader = DataLoader(EvaluationDataset(file, gt_descriptions), batch_size=8, shuffle=False, num_workers=8, pin_memory=True)
         with no_grad():
-            for j, batch in enumerate(tqdm(dataloader)):
+            for _, batch in enumerate(tqdm(dataloader)):
                 images, prompts, changes = batch
                 outputs, probs = chat.call_vicuna(prompts=prompts, generation_config=gen_cfg, return_probs=True)    
                 for i in range(len(outputs)):
@@ -129,7 +129,7 @@ def evaluate_with_llm(path_cds:str=None, device="cuda:0", bunch=False)->None:
             with open(file_chunks[0]+"/evaluation_"+file_chunks[1], "w") as f:
                 json.dump(results, f, indent=4)
 
-def llm_evaluation_summary(path_results:str, path_changes:str):
+def second_evalation_summary_positive_negative(path_eval_results:str, path_changes:str):
     '''
     This function evaluates a paragraph coherence based on the LLM response to the presence or not of fact(s).
     In this function, the LLM is regarded as an oracle that can always provide the correct response (it has been validated using templates).
@@ -138,22 +138,22 @@ def llm_evaluation_summary(path_results:str, path_changes:str):
     Input:
     - path_results: path to the results file, a dictionary with key=image name, value: list of tuples (change, response).
     '''
-    with open(path_results, "r") as f:
-        results = json.load(f)
+    with open(path_eval_results, "r") as f:
+        eval_results = json.load(f)
     
     # Assert if all the 30 possible changes have been evaluated
-    for changes_evaluated in results.values():
+    for changes_evaluated in eval_results.values():
         assert len(changes_evaluated) == 30, "The number of changes evaluated is not 30."
 
     with open(path_changes, "r") as f:
         changes_gt = json.load(f)
     
-    ground_truth = -np.ones((len(results), len(ST_CLASSES), len(ST_CLASSES)))
-    predictions = np.zeros((len(results), len(ST_CLASSES), len(ST_CLASSES)))
+    ground_truth = -np.ones((len(eval_results), len(ST_CLASSES), len(ST_CLASSES)))
+    predictions = np.zeros((len(eval_results), len(ST_CLASSES), len(ST_CLASSES)))
     
     image_names = []
     skipped = 0
-    for i, (image_name, changes_evaluated) in enumerate(results.items()):
+    for i, (image_name, changes_evaluated) in enumerate(eval_results.items()):
         image_names.append(image_name)
         if "png" in image_name:
             gt_changes = changes_gt[image_name]
@@ -225,12 +225,6 @@ def llm_evaluation_summary(path_results:str, path_changes:str):
             for j in range(ground_truth.shape[1]):
                 for z in range(ground_truth.shape[2]):
                     if j != z:
-                        if ground_truth[i,j,z] == 1 and predictions[i,j,z] == 1:
-                            detections += 1     
-                        if ground_truth[i,j,z] == 1 and predictions[i,j,z] != 1:
-                            missed += 1
-                        if ground_truth[i,j,z] == -1 and predictions[i,j,z] == 1:
-                            false += 1
                         if j == c or z == c :
                             if ground_truth[i,j,z] == 1 and predictions[i,j,z] == 1:
                                 detections_class += 1
@@ -245,7 +239,11 @@ def llm_evaluation_summary(path_results:str, path_changes:str):
             elif detections_class != 0 and np.sum(ground_truth[i,c,:]+1)+np.sum(ground_truth[i,:,c]+1) != 0:
                 recalls_class.append(detections_class/(detections_class+missed_class))
                 precisions_class.append(detections_class/(detections_class+false_class))
+            elif detections_class != 0 and np.sum(ground_truth[i,c,:]+1)+np.sum(ground_truth[i,:,c]+1) == 0:
+                recalls_class.append(0)
+                precisions_class.append(0)
             else:
+                # The image does not contain the specific class
                 continue
         
         recalls_class = np.array(recalls_class)
@@ -253,7 +251,7 @@ def llm_evaluation_summary(path_results:str, path_changes:str):
         f1_scores_class = 2*(precisions_class*recalls_class)/(precisions_class+recalls_class)
         f1_scores_class = np.nan_to_num(f1_scores_class)
         print("Average F1 class " + str(c)+": ", np.mean(f1_scores_class))
-            
+    
     f1_scores = 2*(precisions*recalls)/(precisions+recalls)
     # Substitute 0 for nan values in f1_scores
     f1_scores = np.nan_to_num(f1_scores)
@@ -281,7 +279,97 @@ def llm_evaluation_summary(path_results:str, path_changes:str):
     # plt.savefig("true.png")
     return average
 
-def bleu_evaluation_summary(path_gt:str, path_cds:str):
+def parse_levir_gt(path_gt:str):
+    '''
+    Parse the descriptions and return a dictionary with key the image and value the captions.
+    '''
+    with open(path_gt, "r") as f:
+        json_data = json.load(f)
+    
+    gt_levir = {}
+    for image in json_data["images"]:
+        if image["filepath"] == "test":
+            captions = []
+            for caption in image["sentences"]:
+                captions.append(caption["raw"][:-1].strip()+".")
+            gt_levir[image["filename"]] = captions
+    
+    return gt_levir
+    
+def evaluation_summary_levir(path_eval_results:str, path_gt:str):
+    '''
+    This function evaluates a paragraph coherence based on the LLM response to the presence or not of fact(s).
+    In this function, the LLM is regarded as an oracle that can always provide the correct response (it has been validated using templates).
+    This function has been crafted specifically for evaluating change descriptions on the Second dataset. 
+    The facts are derived from the semantic change maps, there are 30 possible changes, and all must be evaluated. 
+    Input:
+    - path_results: path to the results file, a dictionary with key=image name, value: list of tuples (change, response).
+    - path_gt: path to the ground truth file, a dictionary with key=image name, value: caption.
+    '''
+    with open(path_eval_results, "r") as f:
+        eval_results = json.load(f)
+    
+    # Parse levir GT captions
+    gt_captions = parse_levir_gt(path_gt)
+    # Assert if all the 30 possible changes have been evaluated
+    for changes_evaluated in gt_captions.values():
+        assert len(changes_evaluated) == 5, "The number of captions is not 5."
+    
+    ground_truth = np.ones((len(eval_results), 5))
+    predictions = np.zeros((len(eval_results), 5))
+    
+    image_names = []
+    skipped = 0
+    for i, (image_name, changes_evaluated) in enumerate(eval_results.items()):
+        image_names.append(image_name)
+        if not "png" in image_name:
+            image_name = image_name+'.png'
+            
+            # captions = gt_captions[image_name]
+            # if "almost nothing has changed." in captions:
+            #     continue
+            
+        for j, (_, response, _) in enumerate(changes_evaluated):
+            if "yes," in response.lower() or "yes." in response.lower() or "yes</s>" in response.lower():
+                predictions[i, j] = 1
+            elif "no," in response.lower() or "no." in response.lower() or "no</s>" in response.lower():
+                predictions[i, j] = -1
+            else:
+                skipped += 1
+    
+    print("Skipped answers: ", skipped)
+    # Calculate general precision and recall (for all the classes)
+    recalls = np.zeros((ground_truth.shape[0],))
+    precisions = np.zeros((ground_truth.shape[0],))
+    for i in range(ground_truth.shape[0]):
+        detections = 0
+        missed = 0 
+        false = 0 
+        for j in range(ground_truth.shape[1]):
+            if ground_truth[i,j] == 1 and predictions[i,j] == 1:
+                detections += 1     
+            if ground_truth[i,j] == 1 and predictions[i,j] != 1:
+                missed += 1
+            if ground_truth[i,j] == -1 and predictions[i,j] == 1:
+                false += 1
+
+        if detections == 0:
+            # It is ok if there is at least one change per image.
+            recalls[i] = 0
+            precisions[i] = 0
+        else:
+            recalls[i] = detections/(detections+missed)
+            precisions[i] = detections/(detections+false)
+            
+    # Substitute 0 for nan values in recalls
+    f1_scores = 2*(precisions*recalls)/(precisions+recalls)
+    # Substitute 0 for nan values in f1_scores
+    f1_scores = np.nan_to_num(f1_scores)
+    average = np.mean(f1_scores)
+    
+    return average
+
+def standard_evaluation_summary(path_gt:str, path_cds:str):
     '''
     This function evaluates change descriptions comparing them to ground truth change descriptions using standard metrics. 
     Input:
@@ -324,117 +412,51 @@ def bleu_evaluation_summary(path_gt:str, path_cds:str):
     # print output evaluation scores
     for metric, score in coco_eval.eval.items():
         print(f'{metric}: {score:.3f}')
-    
-def create_validation_examples_GPT35(true_positives:float=0.2, false_positives:float=0.0, template=True):
+        
+def standard_evaluation_summary_levir(path_gt:str, path_cds:str):
     '''
-    This function uses GPT 3.5, or template, to create validation examples for the LLM evaluation.
-    Basically the validation is built on two things to prove:
-    When creating the descriptions, we will have different scenarios.
-    - no false positives + different percentages of true positives (20, 60, 100): precision must be high, recall must vary accordingly. 
-    - keeping true positives at 40% and varying the false positives: precision must vary accordingly, recall must be 40%.
+    This function evaluates change descriptions comparing them to ground truth change descriptions using standard metrics. 
+    Input:
+    - path_gt: path to the ground truth file, a dictionary with key=image name, value: ground truth change description.
+    - path_cds: path to the results file, a dictionary with key=image name, value: predicted change description.
     '''
-    # OpenAI API Key
-    api_key = keys.OPENAI_API_KEY
-    
-    # Defining some examples for in context learning generation
-    # ex1 00709
-    ex_1 = "observing the second image, there has been noticeable redevelopment in the area. a significant change is the introduction of a new road or wide pathway slicing through the center of the area, which has led to the removal of a line of trees and alteration of the surrounding land. the earlier presence of greenery and smaller structures has given way to this new pathway, changing the dynamic of the area. adjacent to this new feature, there appears to be the development of parking or storage areas where buildings with dark roofs used to be, particularly noticeable in the lower left quadrant where a structure has been removed. this suggests a shift from a more green, potentially mixed-use area to one focused on transportation and possibly industrial or commercial use."    
-    ex_2 = "looking at the second image compared to the first, a significant amount of development is apparent. the most striking difference is the construction of new large buildings in place of what was primarily empty or undeveloped land. the cleared and leveled ground indicates the area is being prepared for further construction or land development. a new road or access path appears, seamlessly integrating with preexisting roadways, potentially to provide infrastructure to the new developments. vegetation that was once present, particularly in the top central part of the scene, has been mostly removed, perhaps to make way for this ongoing development. the geometric patterns noticeable on the ground suggest additional areas are being marked or foundational work is taking place in preparation for more construction activities."
-    ex_3 = "from the first image to the second, the most significant change is the clearing of the dense vegetation in the top-central area. this section now shows signs of soil disturbance, likely from ground preparation or early stages of construction. there are no more small structures or equipment visible in this area that were initially among the vegetation. additionally, there seems to be a change in the appearance of the roof of the large building in the lower-central part of the view; it looks darker in the second image, which could be due to a change in the roofing material or varying lighting conditions casting a shadow."
-    
-    examples = "Example 1:\n"
-    examples += ex_1 + "\n"
-    examples += "Example 2:\n"
-    examples += ex_2 + "\n"
-    examples += "Example 3:\n"
-    examples += ex_3 + "\n"
-    
-    with open("GT_changes.json", "r") as f:
-        gt_changes = json.load(f)
-    
-    # Open the set of random images
-    with open("validate_llm_eval/random_images.pkl", "rb") as f:
-        random_images = pickle.load(f)
+    # Parse levir GT captions
+    gt = parse_levir_gt(path_gt)
         
-    all_changes = list()
+    with open(path_cds, "r") as f:
+        cds = json.load(f)
+        
+    # Format in the style of coco
+    cocoGT = dict()
     
-    examples = dict()
+    list_images = list()
+    list_annotations = list()
+    for img, captions in gt.items():
+        for captions in captions:
+            list_images.append({"file_name":img, "id":img.split(".")[0]})
+            list_annotations.append({'image_id':img.split(".")[0], "id":img.split(".")[0], 'caption': captions})
     
-    classes = ['water', 'ground', 'low vegetation', 'tree', 'building', 'sports field']
-    for i in range(len(classes)):
-        for j in range(len(classes)):
-            if i != j:
-                all_changes.append("a " + classes[i] + " area has transformed into a " + classes[j] + " area.")
+    cocoGT["images"] = list_images
+    cocoGT["annotations"] = list_annotations
+    
+    coco = COCO(cocoGT)
+    # Creating the predictions
+    predictions = list()
+    
+    for img, description in cds.items():
+        predictions.append({"image_id":img.split(".")[0], "caption":description})
+    
+    coco_result = coco.loadRes(predictions)
+    # create coco_eval object by taking coco and coco_result
+    coco_eval = COCOEvalCap(coco, coco_result)
+    
+    # evaluate results
+    # SPICE will take a few minutes the first time, but speeds up due to caching
+    coco_eval.evaluate()
 
-    for image_name in tqdm(random_images):
-        true_changes = gt_changes[image_name]
-        left_out = list(set(all_changes) - set(true_changes))
-        
-        if true_positives != 0:
-            num_true_positives = round(len(true_changes)*true_positives)
-            if num_true_positives == 0:
-                num_true_positives = 1
-        else:
-            num_true_positives = 0
-            
-        if false_positives != 0:
-            num_false_positives = round(len(left_out)*false_positives)
-            if num_false_positives == 0:
-                num_false_positives = 1
-        else:
-            num_false_positives = 0
-            
-        if template:
-            # Shuffle the changes
-            np.random.shuffle(true_changes)
-            np.random.shuffle(left_out)
-            description = ""
-            for change in true_changes[:num_true_positives]:
-                    description += change + " "
-            
-            for change in left_out[:num_false_positives]:
-                description += change + " "
-
-            examples[image_name] = description
-        
-        else:
-            tp = "Changes:\n"
-            # Create the validation examples
-            for change in gt_changes[random_images[0]][:num_true_positives]:
-                tp += "- "+change + "\n"
-                
-            print(tp)
-            headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}"
-            }
-            
-            payload = {
-            "model": "gpt-3.5-turbo",
-            "messages": [
-                {"role":"system", "content": "You have some examples of output. The user provides a list of changes that occurred in a certain area. The assistant must produce a description, such that each change is clearly deducible from it. The assistant must not directly mention the changes."},
-                {"role":"system", "content": examples},
-                {
-                "role": "user",
-                "content": [
-                    {
-                    "type": "text",
-                    "text": tp +"\nDescription:"
-                    }
-                ]
-                }
-            ],
-            "max_tokens": 512
-            }
-            
-            response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
-            
-            print(response.json()["choices"][0]["message"]["content"])
-        
-    # Save the examples
-    if template:
-        with open("validate_llm_eval/validation_examples_template_"+str(true_positives)+"_"+str(false_positives)+".json", "w") as f:
-            json.dump(examples, f, indent=4)
+    # print output evaluation scores
+    for metric, score in coco_eval.eval.items():
+        print(f'{metric}: {score:.3f}')
             
 
 def calculate_perfect_score(templates_path:str):
@@ -607,18 +629,20 @@ def evaluate_with_GPT35(image):
     
 
 if __name__=="__main__":
-    create_gt_changes()
+    # create_gt_changes()
     # import os
-    # path_cds = "validate_llm_eval"
-    
-    # results = evaluate_with_llm(path_cds, device="cuda:0", bunch=True)
-    
-    # with open("validate_llm_eval/validation_results_template_1.0_1.0.json", "w") as f:
-    #     json.dump(results, f, indent=4)
-    
-    # average = llm_evaluation_summary("results_otter/evaluation_results_otter_chat_template.json", "GT_changes.json")
+    # path_cds = "results_otter/evaluation_results_second_otter_chat_open_guided_buildings_correct.json"
+    # # gt_descriptions = "levir_cc/LevirCCcaptions.json"
+    # evaluate_with_llm(path_cds, device="cuda:1", bunch=False, gt_descriptions=None)
+
+    average = second_evalation_summary_positive_negative("results_otter/evaluation_results_second_otter_chat_open_not_guided.json", "GT_changes.json")
+    print(average)
+    # average = evaluation_summary_levir("results_otter/evaluation_results_levir_otter_chat_open_guided_buildings_sports_fields.json", "levir_cc/LevirCCcaptions.json")
     # print(average)
-    #evaluate_with_GPT35("04639")
+    # standard_evaluation_summary_levir("levir_cc/LevirCCcaptions.json", "results_GPT4/gpt4o_levir_cds.json")
+    # average = llm_evaluation_summary("results_otter/evaluation_results_otter_chat_guided.json", "GT_changes.json")
+    # print(average)
+    # evaluate_with_GPT35("04639")
     # all_results = np.zeros((11,11))
     # for i, tp in enumerate(range(0, 11, 1)):
     #     tp = tp/10

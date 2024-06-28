@@ -52,7 +52,6 @@ class MultitemporalImageSet(Dataset):
         
         if self.method == 1:    
             vision_x = self.image_processor.preprocess([image_1,image_2], return_tensors="pt")["pixel_values"].unsqueeze(0)
-            print(vision_x.shape)
             return image_name, vision_x
         if self.method == 2:
             vision_x = self.image_processor.preprocess([image_1], return_tensors="pt")["pixel_values"].unsqueeze(1)
@@ -161,13 +160,33 @@ class EvaluationDataset(Dataset):
     '''
     Dataset to handle evaluation of the model using reasoning capabilities of a LLM.
     Inputs:
-        - path_cds: str -> path to the json file cotaining the change descriptions.
+        - path_gen_change_desc: str -> path to the json file cotaining the change descriptions.
         
     '''
-    def __init__(self, path_cds):
-        with open(path_cds, "r") as file:
-            self.cds = json.load(file)
-            # Find all the possible changes between two classes
+    def __init__(self, path_gen_change_desc:str, gt_descriptions:str=None):
+        
+        self.prompt_template = "A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions. USER: Here is a paragraph describing some changes: \"<paragraph>\". In the paragraph, are there references to the fact that <fact>? ASSISTANT: Short answer:"
+        
+        with open(path_gen_change_desc, "r") as file:
+            self.change_desc = json.load(file)
+        
+        # Find all the possible changes between two classes
+        if gt_descriptions is not None:
+            self.changes = dict()
+            # Read the change captions of levir
+            with open(gt_descriptions, "r") as file:
+                gt = json.load(file)
+            
+            for dict_image in gt["images"]:
+                if dict_image["filepath"]=="test":
+                    image = dict_image["filename"]
+                    for sentence_dict in dict_image["sentences"]:
+                        sentence = sentence_dict["raw"][:-1].strip()+"."
+                        try:
+                            self.changes[image].append(sentence)
+                        except KeyError:
+                            self.changes[image] = [sentence]
+        else:
             self.changes = list()
             classes = ['water', 'ground', 'low vegetation', 'tree', 'building', 'sports field']
             for i in range(len(classes)):
@@ -175,12 +194,16 @@ class EvaluationDataset(Dataset):
                     if i != j:
                         self.changes.append("a " + classes[i]+" area has transformed into a "+classes[j]+" area.")
         
-        self.prompt_template = "A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions. USER: Here is a paragraph describing some changes: \"<paragraph>\". In the paragraph, are there references to the fact that <fact>? ASSISTANT: Short answer:"
+        
         samples = list()
         
-        for image, change_desc in self.cds.items():
-            for change in self.changes:
-                samples.append((image, change_desc, change))
+        for image, change_desc in self.change_desc.items():
+            if type(self.changes) == dict:
+                for change in self.changes[image+".png"]:
+                    samples.append((image, change_desc, change))
+            elif type(self.changes) == list:
+                for change in self.changes:
+                    samples.append((image, change_desc, change))
         
         self.samples = samples
         
@@ -194,3 +217,10 @@ class EvaluationDataset(Dataset):
         prompt = prompt.replace("<paragraph>", change_desc[:-1])
 
         return image, prompt, change
+    
+    
+if __name__=="__main__":
+    dataset = EvaluationDataset("results_otter/results_levir_otter_chat_open_guided_buildings_sports_fields.json", "levir_cc/LevirCCcaptions.json")
+    
+    
+    print(dataset[0])
